@@ -1,3 +1,4 @@
+Test GIT 
 """
     forward simulation under an MSS model
     officially diploid,  but only in doubling of # of chromosomes

@@ -4,11 +4,32 @@ import argparse
 import sys
 import numpy as np
 
+
+def identifyRandomGene(alignment_location):
+    """
+    picks random gene from fasta alignment files
+    """
+    geneFiles = []
+    for file in os.listdir(alignment_location):
+        if file.endswith('fasta'):
+            geneFiles.append(file)
+    gene = np.random.choice(geneFiles)
+    # print("Picked: " + gene)
+    return gene
+
+def getlistofRandomGenes(alignment_location,njobs):
+    lrg = []
+    while len(lrg) < njobs:
+        gene = identifyRandomGene(alignment_location)
+        if gene not in lrg:
+            lrg.append(gene)
+    return lrg
+
 def parseargs():
     parser = argparse.ArgumentParser("python make_file_of_mss_sim_commands.py",formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-A", help="path for folder containing bacterial alignment files",dest="bacaligndir",required=True,type = str)
     parser.add_argument("-b", help="base filename for putput files (name only, no directories)",dest="basename",required=True,type = str)
-    parser.add_argument("-e", help="random number seed for picking alignment",dest="ranseed",type=int)
+    parser.add_argument("-e", help="random number seed for picking alignments",dest="ranseed",type=int)
     parser.add_argument("-F", help="directory path for output fasta file (default is same as for results and log files)",dest="fdir",type = str)
     parser.add_argument("-k", help="Number of species (4,5 or 11)",dest="numSpecies",default=4,type=int)
     parser.add_argument("-L", help="Length of sequence (# amino acids)", dest="aalength",default=300,type=int)
@@ -33,6 +54,7 @@ def main(argv):
     if args.numSpecies not in [4,5,11]:
         print ("error: -p (# of species) must be 4,5 or 11")
         exit()
+    listofrandomgenes = getlistofRandomGenes(args.bacaligndir,args.numjobs)
     cmd = ["python mss_sim.py"]
     temp = ["-A",str(args.bacaligndir)]
     cmd += temp
@@ -62,9 +84,9 @@ def main(argv):
         if len(seeds) == args.numjobs:
             break
     f = open(args.cmdfn,'w')
-    for e in seeds:
+    for i,e in enumerate(seeds):
         newcmd = cmd.copy()
-        newcmd += ["-e",str(e)]
+        newcmd += ["-e",str(e),"-g",listofrandomgenes[i]]
         f.write("{}\n".format(" ".join(newcmd)))
     f.close()
 
@@ -77,3 +99,4 @@ if __name__ == "__main__":
         main(['-h'])
     else:
         main(sys.argv[1:])
+        

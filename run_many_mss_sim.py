@@ -28,6 +28,9 @@ def getjobslist(fn):
               newlls.append(ls.strip())
     return newlls
 
+if len(sys.argv) != 3:
+     print("run_many_mss_sim.py usage:\n\t\ttwo arguments\n\t\t\t1. the path to the file of mss_sim.py commandlines\n\t\t\t2. the number of jobs to run at a time")
+     exit()
 jobsfile = sys.argv[1]
 jobsatatime = int(sys.argv[2])
 jobstrs = getjobslist(jobsfile)

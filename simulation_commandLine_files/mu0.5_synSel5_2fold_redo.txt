@@ -1,4 +1,0 @@
-python mss_sim.py -A ../bacterial_data/alignments -b mu0.5_synSel5_2fold -N 500 -L 300 -u 0.5 -s 5.0 -y 5.0 -k 11 -m MSS_Codon_Classes_2FOLD_NEUTRAL.tsv -R ../runs/mu0.5_synSel5_2fold -F ../runs/mu0.5_synSel5_2fold -e 6762480
-python mss_sim.py -A ../bacterial_data/alignments -b mu0.5_synSel5_2fold -N 500 -L 300 -u 0.5 -s 5.0 -y 5.0 -k 11 -m MSS_Codon_Classes_2FOLD_NEUTRAL.tsv -R ../runs/mu0.5_synSel5_2fold -F ../runs/mu0.5_synSel5_2fold -e 46265481
-python mss_sim.py -A ../bacterial_data/alignments -b mu0.5_synSel5_2fold -N 500 -L 300 -u 0.5 -s 5.0 -y 5.0 -k 11 -m MSS_Codon_Classes_2FOLD_NEUTRAL.tsv -R ../runs/mu0.5_synSel5_2fold -F ../runs/mu0.5_synSel5_2fold -e 491363
-python mss_sim.py -A ../bacterial_data/alignments -b mu0.5_synSel5_2fold -N 500 -L 300 -u 0.5 -s 5.0 -y 5.0 -k 11 -m MSS_Codon_Classes_2FOLD_NEUTRAL.tsv -R ../runs/mu0.5_synSel5_2fold -F ../runs/mu0.5_synSel5_2fold -e 13419501

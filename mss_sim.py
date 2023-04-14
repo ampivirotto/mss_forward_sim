@@ -215,7 +215,7 @@ def codonInfo():
                 "STOP":["TAA", "TAG", "TGA"]}
 
     aalist = list(codons.keys())
-    aalist.remove('STOP')
+    # aalist.remove('STOP')
     codonlist = []
 
     revCodons  = {}
@@ -252,7 +252,7 @@ def createSelectedDictionary(args):
             if codon in stopCodons:
                 for secondC in codonlist:
                     aaDict[secondC] = 0.0  ## stop codon
-                    aaMuts[secondC] = 0 ## stop codon but nonsyn
+                    aaMuts[secondC] = 3 ## stop codon but nonsyn
             else:
                 for secondC in codonlist:
                     if secondC == codon:
@@ -300,7 +300,7 @@ def createSelectedDictionary(args):
                 aa2 = revCodons[codon2]
                 if codon1 in stopCodons or codon2 in stopCodons:
                     aaDict[codon2] = 0.0  ## stop codon
-                    aaMuts[codon2] = 0 ## stop codon but nonsyn
+                    aaMuts[codon2] = 3 ## stop codon but nonsyn
                 elif codon2 == codon1:
                     aaDict[codon2] = 1.0  ## same codon exactly
                     aaMuts[codon2] = -10 ## same codon  
@@ -368,7 +368,7 @@ class chromosome():
 
     def __init__(self,sequence,fitness,args,mcounts):
         # consider a list of strings (codons)
-        #mcounts : positions 0,1 or 2  for nonsynonymous,  synonymous-selected, synonymous-neutral 
+        #mcounts : positions 0,1,2 or 3 for nonsynonymous,  synonymous-selected, synonymous-neutral, and STOP 
         self.s = sequence
         self.fitstruct = args.fitnessstructure
         self.mutstruct = args.mutstructure
@@ -377,7 +377,7 @@ class chromosome():
         self.ancestor = args.ancestor
         self.debugmutloc = args.debug
         self.fitness = fitness
-        self.mcounts = [mcounts[0],mcounts[1],mcounts[2]]
+        self.mcounts = [mcounts[0],mcounts[1],mcounts[2],mcounts[3]]
 
 
     def mutate(self):
@@ -386,6 +386,7 @@ class chromosome():
         """
         global mutationlocations # use in debug mode 
         pos = 0
+        assert self.fitness > 0
         while True:
             # distance_to_mut = np.random.geometric(self.mrate)
             distance_to_mut = int(np.random.exponential(self.mrateinverse)) # faster than geometric,  but can return 0 
@@ -394,20 +395,29 @@ class chromosome():
             if pos < len(self.s):
                 ## identify old codon
                 oldCodon = self.getOldCodon(pos) 
-                holds = self.s
-                while True: # keep sampling at pos until the new codon is not a stop codon 
-                    ## find new seqence
-                    bps =['A', 'G', 'C', 'T']
-                    bps.remove(self.s[pos:pos+1])
-                    self.s = self.s[:pos] + np.random.choice(bps) + self.s[pos+1:]
-                    ## update fitness
-                    newCodon = self.fitnessfunction(pos, oldCodon)
-                    if newCodon in ['TAG', 'TAA', 'TGA']:
-                        self.s = holds
-                    else:
-                        if self.debugmutloc:
-                            mutationlocations[pos] += 1
-                        break
+                bps =['A', 'G', 'C', 'T']
+                bps.remove(self.s[pos:pos+1])
+                self.s = self.s[:pos] + np.random.choice(bps) + self.s[pos+1:]
+                ## update fitness
+                
+                newCodon = self.fitnessfunction(pos, oldCodon)
+                if self.debugmutloc:
+                    mutationlocations[pos] += 1
+
+                # holds = self.s
+                # while True: # keep sampling at pos until the new codon is not a stop codon 
+                #     ## find new seqence
+                #     bps =['A', 'G', 'C', 'T']
+                #     bps.remove(self.s[pos:pos+1])
+                #     self.s = self.s[:pos] + np.random.choice(bps) + self.s[pos+1:]
+                #     ## update fitness
+                #     newCodon = self.fitnessfunction(pos, oldCodon)
+                #     if newCodon in ['TAG', 'TAA', 'TGA']:
+                #         self.s = holds
+                #     else:
+                #         if self.debugmutloc:
+                #             mutationlocations[pos] += 1
+                #         break
                 muttype = self.mutstruct[oldCodon][newCodon]
                 self.mcounts[muttype] += 1
                 mainmutationcounter[muttype] += 1
@@ -424,10 +434,10 @@ class chromosome():
         # codons, aalist, codonlist, revCodons = codonInfo()
 
         anc, newSelf = self.findCodon(mut)
-        # if newSelf not in stopCodons and revCodons[newSelf] == revCodons[oldcodon]:
-        #     print(revCodons[newSelf],anc,oldcodon,newSelf,self.fitstruct[anc][oldcodon],self.fitstruct[anc][newSelf])
 
-        if newSelf not in stopCodons:
+        if newSelf in stopCodons or self.fitness==0: # fitness could be zero from a previous mutation on this chromosome in this generation
+            self.fitness = 0
+        else:
             self.fitness = self.fitness * self.fitstruct[anc][newSelf] / self.fitstruct[anc][oldcodon]
         return newSelf
 
@@ -487,7 +497,7 @@ class population(list):
                 self.append(chrom)
         else:
             for i in range(self.popsize2):
-                self.append(chromosome(source,1,args, [0,0,0]))
+                self.append(chromosome(source,1,args, [0,0,0,0]))
 
     def generation(self):
         """
@@ -517,6 +527,7 @@ class population(list):
         newpop = []
         for parentgroup in randomparentids:
             for i in parentgroup:
+                # x = np.random.randint(1,100000000)
                 child = chromosome(self[i].s,self[i].fitness,self.args,self[i].mcounts)
                 child.mutate()
                 newpop.append(child)
@@ -616,7 +627,8 @@ class tree():
     
     def summarize_results(self,starttime):
         global mainmutationcounter
-        mnames = ["NonSynonymous ","Synonymous_Sel","Synonymous_Neu"]
+        global nummutationtypes
+        mnames = ["NonSynonymous ","Synonymous_Sel","Synonymous_Neu","Stop"]
         meanfit,fitlist,mcountlist = self.fitmutsummary()
         rf = open(self.args.resultsfilename,'w')
         rf.write("mss_sim\n\narguments:\n")
@@ -624,37 +636,42 @@ class tree():
             rf.write("\t{}: {}\n".format(arg, getattr(self.args, arg)))
         rf.write("\nFinal Mean Fitness: {:.4g}\n".format(meanfit))
         rf.write("\nSampled Individual Fitnesses: {}\n".format(fitlist))
-        rf.write("\nSampled Individual Mutation Counts ([NonSyn,Syn-Sel,Syn-Neu]): {}\n".format(mcountlist))            
+        rf.write("\nSampled Individual Mutation Counts ([NonSyn,Syn-Sel,Syn-Neu,STOP]): {}\n".format(mcountlist))            
         rf.write("\nMutation Total Counts/Rates (per effective bp)\n")
         rf.write("\tmutation_type\tcounts\teffective_#bp\tproportions\tmutations_per_effective_bp:\n")
         totsum = sum(mainmutationcounter)
         effectivenumbp = []
         mutperebp = []
         propebp = []
-        for i in range(3):
+        for i in range(nummutationtypes):
             propebp.append(mainmutationcounter[i]/totsum)
             effectivenumbp.append(3*self.args.aalength*propebp[i])
             mutperebp.append(np.nan if effectivenumbp[i] == 0 else mainmutationcounter[i]/effectivenumbp[i])
             rf.write("\t{}\t{:d}\t{:.0f}\t{:.3g}\t{:.3g}\n".format(mnames[i],mainmutationcounter[i],effectivenumbp[i],propebp[i],mutperebp[i]))
         rf.write("\nSubstitutions per gene copy Counts/Rates (per effective bp)\n")
-        rf.write("\tsubstitution_type\tcounts\tsubstitutions_per_effective_bp\tsubstitutions_per_effective_bp_per_generation\n")
-        subsum = [0,0,0]
+        rf.write("\tsubstitution_type\tmean counts per gene\tsubstitutions_per_effective_bp\tsubstitutions_per_effective_bp_per_generation\n")
+        subsum = [0,0,0,0]
         for mc in mcountlist:
-            for i in range(3):
+            for i in range(nummutationtypes):
                 subsum[i] += mc[i]
-
+        for i in range(nummutationtypes): # take the mean count per sampled chromosome
+            subsum[i] /= self.args.numSpecies
         subrates = []
         totalnumgen = self.args.treeDepth + self.args.burnin
-        for i in range(3):
-            subrates.append(np.nan if effectivenumbp[i] == 0 else subsum[i]/self.args.numSpecies/effectivenumbp[i])
-            rf.write("\t{}\t{:.1f}\t{:.3g}\t{:.3g}\n".format(mnames[i],subsum[i]/self.args.numSpecies,subrates[i],subrates[i]/totalnumgen))
-        
+        for i in range(nummutationtypes):
+            subrates.append(np.nan if effectivenumbp[i] == 0 else subsum[i]/effectivenumbp[i])
+            rf.write("\t{}\t{:.1f}\t{:.3g}\t{:.3g}\n".format(mnames[i],subsum[i],subrates[i],subrates[i]/totalnumgen))
+        #positions in mutation, substitution arrays of length 4 
+        NonSpos = 0
+        SynSelpos = 1
+        SynNeupos = 2
+        STOPpos = 3
         rf.write("\nRate Ratios:\n")
-        total_syn_effectivenumbp = effectivenumbp[1]+ effectivenumbp[2]
-        total_syn_sub_rate = (subsum[1] + subsum[2])/total_syn_effectivenumbp
-        rf.write("\tdN/dS (Nonsynonymous/Synonymous (selected and neutral))\t{:.3g}\n".format(np.nan if total_syn_sub_rate == 0 else subrates[0]/total_syn_sub_rate))
-        rf.write("\tdN/dSn (Nonsynonymous/Synonymous_Neu))\t{:.3g}\n".format(np.nan if subrates[2] == 0 else subrates[0]/subrates[2]))
-        rf.write("\tdSs/dSn (Synonymous_Sel/Synonymous_Neu)\t{:.3g}\n".format(np.nan if subrates[2] == 0 else subrates[1]/subrates[2]))
+        total_syn_effectivenumbp = effectivenumbp[SynSelpos]+ effectivenumbp[SynNeupos]
+        total_syn_sub_rate = (subsum[SynSelpos] + subsum[SynNeupos])/total_syn_effectivenumbp
+        rf.write("\tdN/dS (Nonsynonymous/Synonymous (selected and neutral))\t{:.3g}\n".format(np.nan if total_syn_sub_rate == 0 else subrates[NonSpos]/total_syn_sub_rate))
+        rf.write("\tdN/dSn (Nonsynonymous/Synonymous_Neu))\t{:.3g}\n".format(np.nan if subrates[NonSpos] == 0 else subrates[NonSpos]/subrates[SynNeupos]))
+        rf.write("\tdSs/dSn (Synonymous_Sel/Synonymous_Neu)\t{:.3g}\n".format(np.nan if subrates[SynSelpos] == 0 else subrates[SynSelpos]/subrates[SynNeupos]))
 
         totaltime = time.time()-starttime
         rf.write("\ntotal time: {}\n".format(time.strftime("%H:%M:%S",time.gmtime(totaltime))))
@@ -732,21 +749,11 @@ def main(argv):
     args.mutrate = args.mutationexpectation/args.treeDepth  # got rid of using theta 4Nu,  as not really relevant here 
     args.burnin = 4*args.popsize2 # default burnin period  (not literally a burnin, because sampled tree will go back before this time a bit )
     #rescale the selection coefficients from 2Ns values to Slim values
-    args.SynSel_s_rescaled = SynSel_s = max(0.0,1.0 - (args.SynSel_s/(args.popsize2)))
+    args.SynSel_s_rescaled = max(0.0,1.0 - (args.SynSel_s/(args.popsize2)))
     args.NonSyn_s_rescaled = max(0.0,1.0 - (args.NonSyn_s/(args.popsize2)))
     if args.NonSyn_s_rescaled <= 0.0:
         print("fitness error")
         exit()
-    #set paths for outputs, make folders as needed  
-    # op.split() only does last part,  use normalized_path instead
-    # curdir = os.getcwd()
-    # dirs = op.split(args.rdir)
-    # for d in dirs:
-    #     if op.exists(d) == False:
-    #         os.mkdir(d)
-    #     os.chdir(d)
-    # os.chdir(curdir)
-
     curdir = os.getcwd()
     normalized_path = op.normpath(args.rdir)
     dirs = normalized_path.split(os.sep)
@@ -760,14 +767,6 @@ def main(argv):
     if args.fdir== None:
         args.fdir=args.rdir
     else:
-        # op.split() only does last part,  use normalized_path instead
-        # curdir = os.getcwd()
-        # dirs = op.split(args.fdir)
-        # for d in dirs:
-        #     if op.exists(d) == False:
-        #         os.mkdir(d)
-        #     os.chdir(d)
-        # os.chdir(curdir)
         curdir = os.getcwd()
         normalized_path = op.normpath(args.fdir)
         dirs = normalized_path.split(os.sep)
@@ -779,7 +778,10 @@ def main(argv):
     
     #update this when mutating
     global mainmutationcounter
-    mainmutationcounter = [0,0,0]
+    global nummutationtypes
+    mainmutationcounter = [0,0,0,0]  #positions 0,1,2 or 3 for nonsynonymous,  synonymous-selected, synonymous-neutral, and STOP 
+    nummutationtypes = 4
+
 
     # when debugging for checking distribution of mutation locations
     global mutationlocations

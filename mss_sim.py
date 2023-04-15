@@ -236,8 +236,6 @@ def createSelectedDictionary(args):
     mutDict = {}
 
     codons, aalist, codonlist, revCodons = codonInfo()
-    # import pandas as pd
-    # nonneutral = readModelFile(pd.read_csv(args.mssmodelfilename, sep = '\t'))
     nonneutral,modeltype = readModelFile(args.mssmodelfilename)
 
     stopCodons = ["TAA", "TAG", "TGA"]
@@ -300,7 +298,7 @@ def createSelectedDictionary(args):
                 aa2 = revCodons[codon2]
                 if codon1 in stopCodons or codon2 in stopCodons:
                     aaDict[codon2] = 0.0  ## stop codon
-                    aaMuts[codon2] = 3 ## stop codon but nonsyn
+                    aaMuts[codon2] = 3 ## stop codon 
                 elif codon2 == codon1:
                     aaDict[codon2] = 1.0  ## same codon exactly
                     aaMuts[codon2] = -10 ## same codon  
@@ -355,14 +353,13 @@ def maketreeshape(numSpecies):
                         4: ['p4', 0.8, 'p1']}
     return tree,split_generations
 
-def makefastafile(samples, filename):
-    fn = '{}.fa'.format(filename)
-    if os.path.exists(fn):
-        fn = '{}(1).fa'.format(fn[:-3])
-    with open(fn, 'w') as o:
-        for pop in samples.keys():
-            o.write('>{}\n'.format(pop))
-            o.write(str(samples[pop][0]) + "\n")
+def makefastafile(samples, fn):
+    f = open(fn,'w')
+    for pop in samples.keys():
+        f.write('>{}\n'.format(pop))
+        f.write(str(samples[pop]) + "\n")
+    f.close()
+    return
 
 class chromosome():
 
@@ -484,6 +481,7 @@ class population(list):
         if source is a sequence, then it is the ancestral sequence and all chromosomes are made as copies of it
         if source is a population then the new population is made by sampling from it at random
         """
+        global nummutationtypes
         self.label = label
         self.mrate = args.mutrate
         self.popsize2 = args.popsize2
@@ -497,7 +495,7 @@ class population(list):
                 self.append(chrom)
         else:
             for i in range(self.popsize2):
-                self.append(chromosome(source,1,args, [0,0,0,0]))
+                self.append(chromosome(source,1,args, [0 for i in range(nummutationtypes)]))
 
     def generation(self):
         """
@@ -514,15 +512,18 @@ class population(list):
         unique_indices = []
         for i in range(len(unique_vals)):
             unique_indices.append(np.where(indices == i)[0])
-
         numfits = unique_vals.shape[0]
-        # obsfreqs = counts/fits.shape[0]
-        expfreqs = (unique_vals*counts)/len(fits)/fits.mean()
         if numfits == 1:
-            randomparentids = [np.random.choice(unique_indices[0],size = self.args.popsize2,replace = True)]
+            randomparentids = [np.random.choice(unique_indices[0],size = self.args.popsize2,replace = True)]        
         else:
+            expfreqs = (unique_vals*counts)/len(fits)/fits.mean()
+            expfreqs = [v if v <= 1.0 else 1.0 for v in expfreqs] # can get a value slightly greater than 1  when a fitness is 0 
             samplecounts = np.random.multinomial(self.args.popsize2,expfreqs,1)
             randomparentids = [np.random.choice(unique_indices[i],size=samplecounts[0,i],replace=True) for i in range(numfits)]
+            if self.args.debug:
+                for parentgroup in randomparentids:
+                    for i in parentgroup:
+                        assert self[i].fitness > 0 
         
         newpop = []
         for parentgroup in randomparentids:
@@ -582,13 +583,20 @@ class tree():
             times.append(newTime)
         return newSG, times
 
+
     def samplefrompops(self):
         """
         samples sequences at the end of the run
         """
+        stopCodons = ['TAG', 'TAA', 'TGA']
         samples = {}
         for pop in self.pops.keys():
-            samples[pop] = self.pops[pop].sampleindividual(1)
+            while True: # avoid sampling an individual with a stop codon, will hang if all individuals have a stop codon
+                temp =self.pops[pop].sampleindividual(1)[0]
+                notok = True in [codon in stopCodons for codon in [temp.s[i:i+3] for i in range(0, len(temp.s), 3)]]
+                if notok is False:
+                    break
+            samples[pop] = temp
         return samples
 
     def fitCheck(self):
@@ -632,8 +640,17 @@ class tree():
         meanfit,fitlist,mcountlist = self.fitmutsummary()
         rf = open(self.args.resultsfilename,'w')
         rf.write("mss_sim\n\narguments:\n")
+        # for arg in vars(self.args):
+        #     rf.write("\t{}: {}\n".format(arg, getattr(self.args, arg)))
         for arg in vars(self.args):
-            rf.write("\t{}: {}\n".format(arg, getattr(self.args, arg)))
+            if arg=="fitnessstructure" or  arg=="mutstructure":
+                if self.args.debug:
+                    rf.write("\t{}: {}\n".format(arg, getattr(self.args, arg)))
+                else:
+                    rf.write("\t{}: {}\n".format(arg, "not printed")) # quite large 
+            else:
+                rf.write("\t{}: {}\n".format(arg, getattr(self.args, arg)))
+
         rf.write("\nFinal Mean Fitness: {:.4g}\n".format(meanfit))
         rf.write("\nSampled Individual Fitnesses: {}\n".format(fitlist))
         rf.write("\nSampled Individual Mutation Counts ([NonSyn,Syn-Sel,Syn-Neu,STOP]): {}\n".format(mcountlist))            
@@ -650,7 +667,7 @@ class tree():
             rf.write("\t{}\t{:d}\t{:.0f}\t{:.3g}\t{:.3g}\n".format(mnames[i],mainmutationcounter[i],effectivenumbp[i],propebp[i],mutperebp[i]))
         rf.write("\nSubstitutions per gene copy Counts/Rates (per effective bp)\n")
         rf.write("\tsubstitution_type\tmean counts per gene\tsubstitutions_per_effective_bp\tsubstitutions_per_effective_bp_per_generation\n")
-        subsum = [0,0,0,0]
+        subsum = [0 for i in range(nummutationtypes)]
         for mc in mcountlist:
             for i in range(nummutationtypes):
                 subsum[i] += mc[i]
@@ -779,10 +796,9 @@ def main(argv):
     #update this when mutating
     global mainmutationcounter
     global nummutationtypes
-    mainmutationcounter = [0,0,0,0]  #positions 0,1,2 or 3 for nonsynonymous,  synonymous-selected, synonymous-neutral, and STOP 
     nummutationtypes = 4
-
-
+    mainmutationcounter = [0 for i in range(nummutationtypes)]  #positions 0,1,2 or 3 for nonsynonymous,  synonymous-selected, synonymous-neutral, and STOP 
+    
     # when debugging for checking distribution of mutation locations
     global mutationlocations
     mutationlocations = [0 for i in range(3*args.aalength)]
@@ -791,6 +807,8 @@ def main(argv):
     dnaStrand,genefilename = createCodonSequence(args.bacaligndir,gene=args.genename)# if args.genename is None,  then a random gene is picked 
     args.genename = genefilename[:genefilename.find('_')]
     args.ancestor = makeAncestor(dnaStrand, args.aalength)
+
+    #set file names 
     args.logfilename = op.join(args.rdir,args.basename +  "_" + args.genename + '_log.txt')
     if os.path.exists(args.logfilename):
         args.logfilename = '{}(1)_log.txt'.format(args.logfilename[:-8])
@@ -798,6 +816,9 @@ def main(argv):
     args.resultsfilename = op.join(args.rdir,args.basename +  "_" + args.genename + '_results.txt')
     if os.path.exists(args.resultsfilename):
         args.resultsfilename = '{}(1)_results.txt'.format(args.resultsfilename[:-12])
+    args.fastafilename = op.join(args.fdir, args.basename +  "_" + args.genename +".fa")
+    if os.path.exists(args.fastafilename):
+        args.fastafilename = '{}(1).fa'.format(args.fastafilename[:-3])
 
     # set tree shape
     args.tree, args.split_generations = maketreeshape(args.numSpecies)
@@ -808,14 +829,14 @@ def main(argv):
     # run the simulation
     sim = tree(args, args.ancestor)
     sampledsequences = sim.run()
-    sim.summarize_results( starttime)
+    sim.summarize_results(starttime)
     if args.debug:
         print("mutation counts by base position\n",mutationlocations)
     
     totaltime = time.time()-starttime
     args.logfile.write("\ntotal time: {}\n".format(time.strftime("%H:%M:%S",time.gmtime(totaltime))))
     args.logfile.close()
-    makefastafile(sampledsequences, op.join(args.fdir, args.basename +  "_" + args.genename))
+    makefastafile(sampledsequences, args.fastafilename)
 
 if __name__ == "__main__":
 

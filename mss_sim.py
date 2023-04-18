@@ -29,11 +29,10 @@ def identifyRandomGene(alignment_location):
     print("Picked: " + gene)
     return gene
 
-def readInGeneFile(alignment_location):
+def readInGeneFile(alignment_location, gene):
     """
-    given random gene selected, returns the alignment data for that gene
+    given gene selected, returns the alignment data for that gene
     """
-    gene = identifyRandomGene(alignment_location)
     with open(op.join(alignment_location,gene)) as f:
         species = {}
         dna = ''
@@ -41,19 +40,40 @@ def readInGeneFile(alignment_location):
         for line in f:
             if line.startswith('>'):
                 assert len(dna) % 3 == 0
-                species[spec] = dna
+                if spec != '':
+                    species[spec] = dna
                 spec = line.lstrip('>').rstrip('\n')
                 dna = ''
             else:
                 dna += line.strip('\n')
-    return species, gene
+    return species
 
-def createCodonSequence(alignment_location):
+def findAlignmentFile(gn, al):
+    """
+    find FASTA file corresponding to gene ID
+    """
+    geneFN = ''
+    for file in os.listdir(al):
+        if gn in file and file.endswith('.fasta'):
+            geneFN = file
+    if geneFN == '':
+        print('Gene ID does not exist in found alignment files. Gene ID: ', gn)
+        exit()
+    return geneFN
+
+def createCodonSequence(alignment_location, geneName = None):
     """
     given alignments for randomly selected gene,
     it turns all alignments into single strand of DNA excluding codons with missing bps or stop codons
     """
-    species, gene = readInGeneFile(alignment_location)
+    if geneName == None:
+        geneName = identifyRandomGene(alignment_location)
+    if not geneName.endswith('.fasta'):
+        gene = geneName
+        geneName = findAlignmentFile(geneName, alignment_location)
+    else:
+        gene = geneName[:geneName.find('_')]
+    species = readInGeneFile(alignment_location, geneName)
     allDNA = ''
     stopCodons = ['TAG', 'TAA', 'TGA']
     for x in species:
@@ -74,7 +94,7 @@ def createCodonSequence(alignment_location):
                     allDNA += codon
                     codon = ''
                 codon += bp
-    return allDNA, gene
+    return allDNA, geneName
 
 
 def getCodonProportions(dna):
@@ -712,6 +732,7 @@ def parseargs():
     parser.add_argument("-s", help="Synonymous population selection coefficient, 2Ns (Slim uses 1-(2Ns/2N))", dest="SynSel_s",default=2,type=float)
     parser.add_argument("-y", help="Non-synonymous population selection coefficient, 2Ns (Slim uses 1-(2Ns/2N))", dest="NonSyn_s",default=10,type=float)
     parser.add_argument("-u", help="expected number of neutral mutations per site, from base of tree", dest="mutationexpectation",default=0.5,type=float)
+    parser.add_argument("-G", help="set gene name explicitly", dest="genename")
     return parser
 
 def main(argv):
@@ -764,15 +785,20 @@ def main(argv):
     mutationlocations = [0 for i in range(3*args.aalength)]
 
     # get ancestral sequence
-    dnaStrand,genefilename = createCodonSequence(args.bacaligndir)
-    args.genename = genefilename[:genefilename.find('_')]
+    if args.genename == None:
+        dnaStrand,genefilename = createCodonSequence(args.bacaligndir)
+        singleGene = False
+    else:
+        dnaStrand, genefilename = createCodonSequence(args.bacaligndir, args.genename)
+        singleGene = True
+    args.genename = genefilename
     args.ancestor = makeAncestor(dnaStrand, args.aalength)
     args.logfilename = op.join(args.rdir,args.basename +  "_" + args.genename + '_log.txt')
     if os.path.exists(args.logfilename):
         args.logfilename = '{}_{}_log.txt'.format(args.logfilename[:-8], str(args.ranseed))
     args.logfile = open(args.logfilename, 'w')
     args.resultsfilename = op.join(args.rdir,args.basename +  "_" + args.genename + '_results.txt')
-    if os.path.exists(args.resultsfilename):
+    if (os.path.exists(args.resultsfilename)) or (singleGene == True):
         args.resultsfilename = '{}_{}_results.txt'.format(args.resultsfilename[:-12], str(args.ranseed))
 
     # set tree shape

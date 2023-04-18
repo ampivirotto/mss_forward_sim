@@ -39,7 +39,6 @@ def parseargs():
     parser.add_argument("-s", help="Synonymous population selection coefficient, 2Ns (Slim uses 1-(2Ns/2N))", dest="SynSel_s",default=2,type=float)
     parser.add_argument("-y", help="Non-synonymous population selection coefficient, 2Ns (Slim uses 1-(2Ns/2N))", dest="NonSyn_s",default=10,type=float)
     parser.add_argument("-u", help="expected number of neutral mutations per site, from base of tree", dest="mutationexpectation",default=0.5,type=float)
-    parser.add_argument("-g", help="Name of Gene, if want to explicitly run with single set of true alignments", dest="geneName")
     parser.add_argument("-c", help="Path to file of list of commands", dest="cmdfn", type=str,required=True)
     parser.add_argument("-j", help="Number of jobs",dest="numjobs",required=True,type=int)
 
@@ -79,9 +78,6 @@ def main(argv):
     cmd += temp
     temp = ["-F",str(args.fdir)]
     cmd += temp
-    if args.geneName != None:
-        temp = ["-G",str(args.geneName)]
-        cmd+=temp
     seeds = set()
     while True:
         seeds.add(np.random.randint(100,100000000))

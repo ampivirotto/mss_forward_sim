@@ -70,9 +70,9 @@ def createCodonSequence(alignment_location,gene = None):
                     if codon in stopCodons:
                         codon = ''
                         continue
-                    if codon == 'ATG':
-                        codon = ''
-                        continue
+                    # if codon == 'ATG':
+                    #     codon = ''
+                    #     continue
                     allDNA += codon
                     codon = ''
                 codon += bp
@@ -385,11 +385,24 @@ class chromosome():
         global mutationlocations # use in debug mode 
         pos = 0
         assert self.fitness > 0
+        lastpos = 0
+        lastcodonpos = -1
+        x = np.random.randint(1,10000000000)
         while True:
-            # distance_to_mut = np.random.geometric(self.mrate)
-            distance_to_mut = int(np.random.exponential(self.mrateinverse)) # faster than geometric,  but can return 0 
+            # distance_to_mut = np.random.geometric(self.mrate) # geometric a bit slower than exponential
+            while True: # prevent multiple mutations in the same codon 
+                distance_to_mut = int(np.random.exponential(self.mrateinverse)) # faster than geometric,  but can return 0 
             ## set position that mutates
-            pos += distance_to_mut
+                pos += distance_to_mut
+                codonpos = pos //3
+                if codonpos != lastcodonpos:
+                    lastcodonpos = codonpos
+                    break
+                else:
+                    pass
+            # if lastpos > 0 and (lastpos+1) % 3 in (1,2) and pos-lastpos ==1:
+            # # if lastpos > 0 and pos-lastpos < 3:
+            #     pass
             if pos < len(self.s):
                 ## identify old codon
                 oldCodon = self.getOldCodon(pos) 
@@ -402,26 +415,13 @@ class chromosome():
                 if self.debugmutloc:
                     mutationlocations[pos] += 1
 
-                # holds = self.s
-                # while True: # keep sampling at pos until the new codon is not a stop codon 
-                #     ## find new seqence
-                #     bps =['A', 'G', 'C', 'T']
-                #     bps.remove(self.s[pos:pos+1])
-                #     self.s = self.s[:pos] + np.random.choice(bps) + self.s[pos+1:]
-                #     ## update fitness
-                #     newCodon = self.fitnessfunction(pos, oldCodon)
-                #     if newCodon in ['TAG', 'TAA', 'TGA']:
-                #         self.s = holds
-                #     else:
-                #         if self.debugmutloc:
-                #             mutationlocations[pos] += 1
-                #         break
                 muttype = self.mutstruct[oldCodon][newCodon]
                 self.mcounts[muttype] += 1
                 mainmutationcounter[muttype] += 1
                 pos += 1 # if using exponential to approximate geometric,  must increment pos in case 0 gets picked 
             else:
                 break
+            lastpos = pos
 
 
     def fitnessfunction(self, mut,oldcodon):
@@ -648,7 +648,7 @@ class tree():
                 if self.args.debug:
                     rf.write("\t{}: {}\n".format(arg, getattr(self.args, arg)))
                 else:
-                    rf.write("\t{}: {}\n".format(arg, "not printed")) # quite large 
+                    rf.write("\t{}: {}\n".format(arg, " - printed only in debug mode")) # quite large 
             else:
                 rf.write("\t{}: {}\n".format(arg, getattr(self.args, arg)))
 
@@ -749,7 +749,6 @@ def parseargs():
     parser.add_argument("-s", help="Synonymous population selection coefficient, 2Ns (Slim uses 1-(2Ns/2N))", dest="SynSel_s",default=2,type=float)
     parser.add_argument("-y", help="Non-synonymous population selection coefficient, 2Ns (Slim uses 1-(2Ns/2N))", dest="NonSyn_s",default=10,type=float)
     parser.add_argument("-u", help="expected number of neutral mutations per site, from base of tree", dest="mutationexpectation",default=0.5,type=float)
-    parser.add_argument("-G", help="set gene name explicitly", dest="genename")
     return parser
 
 def main(argv):
@@ -820,6 +819,9 @@ def main(argv):
     args.resultsfilename = op.join(args.rdir,args.basename +  "_" + args.genename + '_results.txt')
     if (os.path.exists(args.resultsfilename)) or (singleGene == True):
         args.resultsfilename =  op.join(args.rdir, '{}_{}_results.txt'.format(args.resultsfilename[:-12], str(args.ranseed)))
+    args.fastafilename = op.join(args.rdir, '{}_{}.fa'.format(args.basename, args.genename))
+    if (os.path.exists(args.fastafilename)) or (singleGene == True):
+        args.fastafilename = op.join(args.rdir, '{}_{}_{}.fa'.format(args.basename, args.genename, str(args.ranseed)))
 
     # set tree shape
     args.tree, args.split_generations = maketreeshape(args.numSpecies)

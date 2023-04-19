@@ -17,12 +17,17 @@ def identifyRandomGene(alignment_location):
     # print("Picked: " + gene)
     return gene
 
-def getlistofRandomGenes(alignment_location,njobs):
+def getlistofRandomGenes(alignment_location,njobs, sg):
+    #print(sg)
     lrg = []
-    while len(lrg) < njobs:
-        gene = identifyRandomGene(alignment_location)
-        if gene not in lrg:
-            lrg.append(gene)
+    if sg != True:
+        while len(lrg) < njobs:
+            gene = identifyRandomGene(alignment_location)
+            if gene not in lrg:
+                lrg.append(gene)
+    else:
+        g = identifyRandomGene(alignment_location)
+        lrg = [g for x in range(njobs)]
     return lrg
 
 def parseargs():
@@ -41,9 +46,10 @@ def parseargs():
     parser.add_argument("-u", help="expected number of neutral mutations per site, from base of tree", dest="mutationexpectation",default=0.5,type=float)
     parser.add_argument("-c", help="Path to file of list of commands", dest="cmdfn", type=str,required=True)
     parser.add_argument("-j", help="Number of jobs",dest="numjobs",required=True,type=int)
-
-
+    parser.add_argument("-g", help="Set for single gene chosen", dest="singleGene", default=False, action='store_true')
     return parser
+
+
 def main(argv):
     parser = parseargs()
     if argv[-1] =='':
@@ -54,7 +60,7 @@ def main(argv):
     if args.numSpecies not in [4,5,11]:
         print ("error: -p (# of species) must be 4,5 or 11")
         exit()
-    listofrandomgenes = getlistofRandomGenes(args.bacaligndir,args.numjobs)
+    listofrandomgenes = getlistofRandomGenes(args.bacaligndir,args.numjobs, sg=args.singleGene)
     cmd = ["python mss_sim.py"]
     temp = ["-A",str(args.bacaligndir)]
     cmd += temp
@@ -99,4 +105,3 @@ if __name__ == "__main__":
         main(['-h'])
     else:
         main(sys.argv[1:])
-        

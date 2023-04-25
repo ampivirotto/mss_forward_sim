@@ -7,8 +7,6 @@
     lifecycle:
         a chromosome is sampled at random from one of the possible parents, based on the parent fitnesses
         after it is sampled new mutations are added and its fitness is calculated
-
-
 """
 import os
 import os.path as op
@@ -377,8 +375,61 @@ class chromosome():
         self.fitness = fitness
         self.mcounts = [mcounts[0],mcounts[1],mcounts[2],mcounts[3]]
 
-
     def mutate(self):
+        """
+            a function that changes s and recalculates fitness
+            a bit wonky, as it uses exponential to get the distance to the next mutation
+            but must also allow for multiple changes in a codon 
+        """
+        global mutationlocations # use in debug mode 
+        pos = 0 # a position that mutates  (if not past the end of the sequence)	
+        # assert self.fitness > 0
+        lastcodonpos = -1
+        # x = np.random.randint(1,10000000000) # debugging
+        
+        while True:
+            # distance_to_mut = np.random.geometric(self.mrate) # geometric a bit slower than exponential
+            while True: # gets one or more changes in a codon
+                # exponential is faster than geometric,  but can return 0 
+                distance_to_mut = int(np.random.exponential(self.mrateinverse)) 
+            ## set position that mutates
+                pos += distance_to_mut
+                codonpos = pos //3
+                if lastcodonpos == -1:
+                    mutlocs = [pos]
+                    lastcodonpos = codonpos
+                    pos += 1 # increment to value that is next possible position to mutate 
+                elif codonpos != lastcodonpos:
+                    lastcodonpos = codonpos
+                    pos += 1
+                    break
+                else:
+                    mutlocs.append(pos)
+                    pos += 1
+            if mutlocs[-1] < len(self.s):
+                ## identify old codon
+                oldCodon = self.getOldCodon(mutlocs[0]) 
+                for ml in mutlocs:
+                    bps =['A', 'G', 'C', 'T']
+                    bps.remove(self.s[ml:ml+1])
+                    self.s = self.s[:ml] + np.random.choice(bps) + self.s[ml+1:]
+                ## update fitness
+                newCodon = self.fitnessfunction(mutlocs[0], oldCodon)
+                if self.debugmutloc:
+                    for ml in mutlocs:
+                        mutationlocations[ml] += 1
+                muttype = self.mutstruct[oldCodon][newCodon]
+                self.mcounts[muttype] += 1
+                mainmutationcounter[muttype] += 1
+                if pos > len(self.s):
+                    break
+                else: # reset mutlocs to contain only the last exponential jump position (before it was incremented)
+                    mutlocs = [pos-1] # the next mutation location (pos was previously incremented to the start of the next interval)
+            else:
+                break
+
+
+    def mutate_hold(self):
         """
             a function that changes s and recalculates fitness
         """
@@ -400,9 +451,6 @@ class chromosome():
                     break
                 else:
                     pass
-            # if lastpos > 0 and (lastpos+1) % 3 in (1,2) and pos-lastpos ==1:
-            # # if lastpos > 0 and pos-lastpos < 3:
-            #     pass
             if pos < len(self.s):
                 ## identify old codon
                 oldCodon = self.getOldCodon(pos)
@@ -410,7 +458,6 @@ class chromosome():
                 bps.remove(self.s[pos:pos+1])
                 self.s = self.s[:pos] + np.random.choice(bps) + self.s[pos+1:]
                 ## update fitness
-
                 newCodon = self.fitnessfunction(pos, oldCodon)
                 if self.debugmutloc:
                     mutationlocations[pos] += 1
@@ -429,8 +476,6 @@ class chromosome():
         recalculates fitness based on newCodon and ancestral codon just for mutations
         """
         stopCodons = ['TAG', 'TAA', 'TGA']
-        # codons, aalist, codonlist, revCodons = codonInfo()
-
         anc, newSelf = self.findCodon(mut)
 
         if newSelf in stopCodons or self.fitness==0: # fitness could be zero from a previous mutation on this chromosome in this generation
@@ -467,7 +512,8 @@ class chromosome():
         elif position == 2:
             return self.ancestor[i-2:i+1], self.s[i-2:i+1]
         else:
-            print('error')
+            print('findcodon() error',i)
+            exit()
 
     def __str__(self):
         return self.s
@@ -773,27 +819,37 @@ def main(argv):
         print("fitness error")
         exit()
     curdir = os.getcwd()
-    normalized_path = op.normpath(args.rdir)
-    dirs = normalized_path.split(os.sep)
-    for d in dirs:
-        if op.exists(d) == False:
-            os.mkdir(d)
-        os.chdir(d)
-    os.chdir(curdir)
-
-
-    if args.fdir== None:
-        args.fdir=args.rdir
-    else:
+    #if path is a string that can be separated into folders,  and one or more of them do not exist,  this will create them
+    try:# create folder(s) if needed. When running lots of jobs, a dir may not exist at one moment, but then does exist in the next because of another job running, so use try/except
         curdir = os.getcwd()
-        normalized_path = op.normpath(args.fdir)
+        normalized_path = op.normpath(args.rdir)
         dirs = normalized_path.split(os.sep)
         for d in dirs:
             if op.exists(d) == False:
                 os.mkdir(d)
             os.chdir(d)
         os.chdir(curdir)
+    except:
+        pass
 
+
+    if args.fdir== None:
+        args.fdir=args.rdir
+    else:
+        #if path is a string that can be separated into folders,  and one or more of them do not exist,  this will create them
+        try:# create folder(s) if needed. When running lots of jobs, a dir may not exist at one moment, but then does exist in the next because of another job running, so use try/except
+            curdir = os.getcwd()
+            normalized_path = op.normpath(args.fdir)
+            dirs = normalized_path.split(os.sep)
+            for d in dirs:
+                if op.exists(d) == False:
+                    os.mkdir(d)
+                os.chdir(d)
+            os.chdir(curdir)        
+        except:
+            pass  
+        
+    
     #update this when mutating
     global mainmutationcounter
     global nummutationtypes

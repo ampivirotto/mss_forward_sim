@@ -400,11 +400,11 @@ class chromosome():
                     pos += 1 # increment to value that is next possible position to mutate 
                 elif codonpos != lastcodonpos:
                     lastcodonpos = codonpos
-                    pos += 1
+                    pos += 1 # increment to value that is next possible position to mutate 
                     break
                 else:
                     mutlocs.append(pos)
-                    pos += 1
+                    pos += 1 # increment to value that is next possible position to mutate 
             if mutlocs[-1] < len(self.s):
                 ## identify old codon
                 oldCodon = self.getOldCodon(mutlocs[0]) 
@@ -476,11 +476,12 @@ class chromosome():
         """
         stopCodons = ['TAG', 'TAA', 'TGA']
         anc, newSelf = self.findCodon(mut)
+        assert newSelf != oldcodon
 
-        if newSelf in stopCodons or self.fitness==0: # fitness could be zero from a previous mutation on this chromosome in this generation
-            self.fitness = 0
-        else:
-            self.fitness = self.fitness * self.fitstruct[anc][newSelf] / self.fitstruct[anc][oldcodon]
+        # if newSelf in stopCodons or self.fitness==0: # fitness could be zero from a previous mutation on this chromosome in this generation
+        #     self.fitness = 0
+        # else:
+        self.fitness = self.fitness * self.fitstruct[anc][newSelf] / self.fitstruct[anc][oldcodon]
         return newSelf
 
     def getOldCodon(self, i):
@@ -695,6 +696,7 @@ class tree():
                 rf.write("\t{}: {}\n".format(arg, getattr(self.args, arg)))
 
         rf.write("\nFinal Mean Fitness: {:.4g}\n".format(meanfit))
+        rf.write("\nMean number of fitness values each generation: {:.1f}\nMean number of individuals per fitness value: {:.1f}\n".format(self.args.meannumfits,self.args.popsize2/self.args.meannumfits))
         rf.write("\nSampled Individual Fitnesses: {}\n".format(fitlist))
         rf.write("\nSampled Individual Mutation Counts ([NonSyn,Syn-Sel,Syn-Neu,STOP]): {}\n".format(mcountlist))            
         rf.write("\nMutation Total Counts/Rates (per effective bp)\n")
@@ -736,13 +738,15 @@ class tree():
         totaltime = time.time()-starttime
         rf.write("\ntotal time: {}\n".format(time.strftime("%H:%M:%S",time.gmtime(totaltime))))
         rf.close()
-            
+
+        
     def run(self):
         """
         runs for treedepth generations
         """
         self.pops['p1'] = self.pop0
         gen = 1
+        countpopgens = 0
         while gen < self.args.treeDepth:
             """
             loop over generations,  adding populations as needed
@@ -756,9 +760,11 @@ class tree():
 
             for key in self.pops.keys():
                 numdifferentfitnessvalues = self.pops[key].generation()
+                self.args.meannumfits += numdifferentfitnessvalues
+                countpopgens +=1
                 # print(numdifferentfitnessvalues,' ',end='')
 
-
+            
             if self.args.debug == True:
                 if gen % (self.args.popsize2 * 4) == 0:
                     self.pops[key].checkpop(self.args.aalength, gen)
@@ -770,7 +776,7 @@ class tree():
             if self.args.debug and gen % self.args.popsize2 == 0:
                 meanfit = self.fitCheck()
                 print("generation {} ({:.1f}%)  # populations: {}  mean fitness: {:.4f}".format(gen,100*gen/self.args.treeDepth,len(self.pops.keys()),meanfit))
-
+        self.args.meannumfits /= countpopgens
         sample = self.samplefrompops()
         self.args.logfile.write('\nTotal Mutation counts [NonSyn,Syn-Sel,Syn-Neu]: ' + str(mainmutationcounter))
         return sample
@@ -804,6 +810,7 @@ def main(argv):
     if args.numSpecies not in [4,5,11]:
         print ("error: -p (# of species) must be 4,5 or 11")
         exit()
+    args.meannumfits = 0
     args.popsize2 = args.popsize*2
     args.treeDepth = 100000 # fixed at a specific value # previously scaled by population size  args.treeDepth * args.popsize
     args.mutrate = args.mutationexpectation/args.treeDepth  # got rid of using theta 4Nu,  as not really relevant here 

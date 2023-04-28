@@ -4,7 +4,7 @@ import os
 import os.path as op
 import sys
 
-def runcmd(cmd, verbose = True):
+def runcmdhold(cmd, verbose = True):
     """
     cmd is a string
     """
@@ -17,7 +17,27 @@ def runcmd(cmd, verbose = True):
     )
     # std_out, std_err = process.communicate()
     # if verbose:
-    #     print(std_out.strip(), std_err, end="")
+    #     print(cmd,std_out.strip(), std_err, end="")
+    return process
+
+def runcmd(cmd,ci, verbose = True):
+    """
+    cmd is a string
+    """
+    # out = open("run_many_mss_sim_output({}).out".format(ci),'w')
+    err = open("run_many_mss_sim_errors({}).out".format(ci),'w')
+    process = subprocess.Popen(
+        cmd,
+        # stdout = out,
+        stderr = err,
+        stdout = subprocess.PIPE,
+        # stderr = subprocess.PIPE,
+        text = True,
+        shell = True
+    )
+    # std_out, std_err = process.communicate()
+    # if verbose:
+    #     print(cmd,std_out.strip(), std_err, end="")
     return process
 
 def getjobslist(fn):
@@ -38,7 +58,7 @@ jobstrs = getjobslist(jobsfile)
 # jobsatatime = 20
 ji = 0
 while ji < len(jobstrs):
-    procs_list = [runcmd(cmd) for cmd in jobstrs[ji:ji+jobsatatime]]
+    procs_list = [runcmd(cmd,ji + ci) for ci,cmd in enumerate(jobstrs[ji:ji+jobsatatime])]
     for proc in procs_list:
 	    proc.wait()
     ji += jobsatatime

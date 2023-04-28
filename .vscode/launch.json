@@ -1,0 +1,24 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            //"args": ["-A","../work/bacalignments/","-b","debug","-e","417","-F","../work/runs/debug",
+              //      "-k","4","-L","300","-m","MSS_Codon_Classes_2FOLD_NEUTRAL.tsv","-N","100","-R","../work/runs/debug",
+                //    "-s","0","-y","5","-u","5","-d"]
+            //"args" : ["-A","../work/bacalignments/","-L","300","-k","11","-m","MSS_Codon_Classes_RANDOM_NEUTRAL.tsv","-R","../work/runs/ID_y5_y100","-F","../work/runs/ID_y5_y100/FA","-b","Vary_y_u_N500_s0.0_y6.746_u7.8","-N","500","-u","7.8","-s","0.0","-y","6.746","-e","8500120","-g","aspS_13_species_aligned.fasta"]
+            "args": ["-A","../work/bacalignments/","-b","Vary_y_u","-e","551","-F","../work/runs/ID_y5_y50/FA","-k","11","-L",
+                    "300","-m","MSS_Codon_Classes_RANDOM_NEUTRAL.tsv","-N","500","-R","../work/runs/ID_y5_y50","-s","0",
+                    "-y","5","-y","50","-y","log","-u","1.604","-c","../work/commandlines/ID_y.txt","-v","20"]
+            
+        }
+    ]
+}

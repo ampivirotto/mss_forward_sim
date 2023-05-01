@@ -1,25 +1,53 @@
 """
-    adding adaptation 
-    -w gives the rate at which the population experiences a change in the optimal sequence
-    e.g. -w 1e-3  means that the probability each generation of a change is 1e-3
-    when there is a change,  a random position is selected, and a new codon for a different amino acid is put in the population ancestor at that position
-    need to keep a new data structure that has a list of all these. by position 
-        dictionary keys are codon positions,  values are the new beneficial amino acid 
+    5/1/2023
+    Handling selection for synonymous changes
+    If all syn changes have the same value in the selection structure dictionary then
+    if anc is a different codon for the same amino acid this ratio will often be 1. 
+    i.e. self.fitstruct[anc][newcodon] / self.fitstruct[anc][oldcodon] == 1
+    Also if anc is for a different amino acid than oldcodon and newcodon,  then the ratio will be 1.  
+    But we want every type 1 mutation to give us a fitness change. 
+    And we want some of these type 1 mutations to be favored. 
 
-    if a mutation type is nonsynonymous (class 0) then look up to see if it is an adaptive change
+    
+    To deal with this,  the codons as ordered in codondic and codonlist are assumed to be
+      in fitness order,  such that the high fitness ones come first. 
+      Any pair of syn codons, codon1 and codon2  with indices in codondic of c1 and c2,  
+      And if c1 < c2,  then they represent a pair for which codon1 has the higher fitness. 
+      So if the mutation is from codon1 to codon2, then it  is to a lower fitness with factor  args.SynSelDel_s_rescaled
+      However if the change is from codon2 to codon1,  then it is to a higher fitness with factor  args.SynSelFav_s_rescaled
 
-    sites change optimal amino acid 
-
-    need to be able to count adaptive mutations so we can count them as we do other mutations 
+      to make this work,  we have to set the ancestral sequence with the high fitness codons to begin with
+      otherwise there is a lot of evolution in which the random low fitness codons get replaced with high fitness ones
+      and the fitness goes up and up for awhile. 
     
 
-    for each population,  simulate the generation numbers in which there is a change 
+      
+    The alternative to such schemes would be to have a ranking among the synonymous codons for an amino acid 
+        which would require having more fitness values for synonymous changes , and thus more fitness values among chromosomes 
+        
+    adding adaptation 
+        option -w gives the rate at which the population experiences a change in the optimal sequence
+        e.g. -w 1e-3  means that the probability each generation of a change is 1e-3
+        when there is a change,  a random position is selected, and a new codon for a different amino acid is 
+        put in the population ancestor at that position
+        
+        need to keep a new data structure that has a list of all these. by position 
+            dictionary keys are codon positions,  values are the new beneficial amino acid 
 
-    each population gets its own ancestor 
-    when there is a change,  a random codon is changed in the ancestor 
+        if a mutation type is nonsynonymous (class 0) then look up to see if it is an adaptive change and count it as such
+
+        sites change optimal amino acid 
+
+        need to be able to count adaptive mutations so we can count them as we do other mutations 
+        
+
+        for each population,  simulate the generation numbers in which there is a change 
+
+        each population gets its own ancestor 
+        when there is a change,  a random codon is changed in the ancestor 
 """
 """
-    4/30/2023
+    before 4/30/2023
     forward simulation under an MSS model
     officially diploid,  but only in doubling of # of chromosomes
         throughout popsize refers to diploid # and popsize2 to haploid number
@@ -95,9 +123,9 @@ def createCodonSequence(alignment_location,gene = None):
     given alignments for randomly selected gene, 
     it turns all alignments into single strand of DNA excluding codons with missing bps or stop codons
     """
+    global stopCodons
     species, gene = readInGeneFile(alignment_location,gene = gene)
     allDNA = ''
-    stopCodons = ['TAG', 'TAA', 'TGA']
     for x in species:
         dna = species[x]
         codon = ''
@@ -145,10 +173,18 @@ def getCodonProportions(dna):
 def makeAncestor(allDNA, aalen):
     """
     take allDNA and take a random assortment of codons based on appearing in allDNA
+
+    Then replace each codon with the most fit codon for the corresponding amino acid.
     """
+    global codondic,revcodondic
     props = getCodonProportions(allDNA)
     ancestor = np.random.choice(list(props.keys()), size = aalen, p = list(props.values()))
-    return ''.join(ancestor)
+    bestcodonancestor = []
+    for codon in ancestor:
+        aa = revcodondic[codon]
+        newcodon = codondic[aa][0] # the first codon in the list is arbitrarily specified to be the most fit 
+        bestcodonancestor.append(newcodon)
+    return ''.join(bestcodonancestor)
 
 
 def countCodons(dna):
@@ -169,16 +205,14 @@ def countCodons(dna):
     return codonDict
 
 def getModelCodonPairs(lls):
-    d = {'CYS': 'C', 'ASP': 'D', 'SER': 'S', 'GLN': 'Q', 'LYS': 'K',
-     'ILE': 'I', 'PRO': 'P', 'THR': 'T', 'PHE': 'F', 'ASN': 'N',
-     'GLY': 'G', 'HIS': 'H', 'LEU': 'L', 'ARG': 'R', 'TRP': 'W',
-     'ALA': 'A', 'VAL':'V', 'GLT': 'E', 'TYR': 'Y', 'MET': 'M'}    
+    global aa1letterdic
+ 
     sdict = {}
     assert len(lls) == 87, "missing 1 or more codon pairs,  should be 87 of them "
     for ls in lls:
         [aa,codon1,codon2,selneu] = ls.strip().split()
         if len(aa) == 3:
-            A1 = d[aa]
+            A1 = revcodondic[aa]
         else:
             A1 = aa.upper()
             assert len(A1) == 1
@@ -194,10 +228,6 @@ def readModelFile(fn):
         if "CODON1" and "CODON2" are in the header, it is a file of pairs of codons, in which case call getModelCodonPairs()
         otherwise it is a file of codons grouped by amino acid
     """
-    d = {'CYS': 'C', 'ASP': 'D', 'SER': 'S', 'GLN': 'Q', 'LYS': 'K',
-     'ILE': 'I', 'PRO': 'P', 'THR': 'T', 'PHE': 'F', 'ASN': 'N',
-     'GLY': 'G', 'HIS': 'H', 'LEU': 'L', 'ARG': 'R', 'TRP': 'W',
-     'ALA': 'A', 'VAL':'V', 'GLT': 'E', 'TYR': 'Y', 'MET': 'M'}
     lls = open(fn,'r').readlines()
     while len(lls[-1]) < 2:
         lls = lls[:-1]
@@ -208,7 +238,7 @@ def readModelFile(fn):
     sdict = {}
     for ls in lls:
         [aa,codon,selneu] = ls.strip().split()
-        A1 = d[aa]
+        A1 = revcodondic[aa]
         if selneu == "SELECTED":
             if A1 in sdict:
                 sdict[A1].append(codon)
@@ -217,20 +247,18 @@ def readModelFile(fn):
     return sdict,"aminoacidsets" 
 
 def convertAAformat(aa):
-    d = {'CYS': 'C', 'ASP': 'D', 'SER': 'S', 'GLN': 'Q', 'LYS': 'K',
-     'ILE': 'I', 'PRO': 'P', 'THR': 'T', 'PHE': 'F', 'ASN': 'N',
-     'GLY': 'G', 'HIS': 'H', 'LEU': 'L', 'ARG': 'R', 'TRP': 'W',
-     'ALA': 'A', 'VAL':'V', 'GLT': 'E', 'TYR': 'Y', 'MET': 'M'}
+    global aa1letterdic
 
     if len(aa) == 3:
-        return d[aa]
+        return revcodondic[aa]
     elif len(aa) == 1:
-        for dkey in d.keys():
-            if d[dkey] == aa:
+        for dkey in aa1letterdic.keys():
+            if revcodondic[dkey] == aa:
                 return dkey
 
 def codonInfo():
 
+    stopCodons = ['TAG', 'TAA', 'TGA']
     codons ={   "I":["ATT", "ATC", "ATA"],
                 "L":["CTT", "CTC", "CTA", "CTG", "TTA", "TTG"],
                 "V":["GTT", "GTC", "GTA", "GTG"],
@@ -263,60 +291,64 @@ def codonInfo():
         for ci,cd in enumerate(codons[aa]):
             codonlist.append(cd)
             revCodons[cd] = aa
-            optimalcodons[cd] = ci==0 # just set the first codon for each aa as the optimal codon
+            if aa != "STOP":
+                optimalcodons[cd] = ci==0 # just set the first codon for each aa as the optimal codon
+    aa1letterdic = {'CYS': 'C', 'ASP': 'D', 'SER': 'S', 'GLN': 'Q', 'LYS': 'K',
+        'ILE': 'I', 'PRO': 'P', 'THR': 'T', 'PHE': 'F', 'ASN': 'N',
+        'GLY': 'G', 'HIS': 'H', 'LEU': 'L', 'ARG': 'R', 'TRP': 'W',
+        'ALA': 'A', 'VAL':'V', 'GLT': 'E', 'TYR': 'Y', 'MET': 'M'}
 
-    return codons, aalist, codonlist, revCodons,optimalcodons
+
+    return codons, aalist, codonlist, revCodons,optimalcodons,aa1letterdic,stopCodons
 
 def createSelectedDictionary(args):
     """
     if some structure needs to be built that represents codon fitnesses efficiently,  this is the place for 
-    mutDict :  0,1 or 2  for nonsynonymous,  synonymous-selected, synonymous-neutral 
+    mutDict :  0,2,3 or 4  for nonsynonymous,  synonymous-selected, synonymous-neutral, or STOP 
     """
+    global codondic,codonlist,revcodondic,optimalcodons,stopCodons
     selectedDict = {}
     mutDict = {}
-
-    codons, aalist, codonlist, revCodons,optimalcodons = codonInfo()
     nonneutral,modeltype = readModelFile(args.mssmodelfilename)
-
-    stopCodons = ["TAA", "TAG", "TGA"]
+    
     if modeltype=="aminoacidsets":
-        for codon in codonlist:
-            aaDict = {}
-            aaMuts = {}
+        exit() # this needs updating to work like the 'codonpairs' fitness structure
+        # for codon in codonlist:
+        #     aaDict = {}
+        #     aaMuts = {}
+        #     aa = revcodondic[codon]
+        #     synCodons = codondic[aa]
 
-            aa = revCodons[codon]
-            synCodons = codons[aa]
+        #     if codon in stopCodons:
+        #         for secondC in codonlist:
+        #             aaDict[secondC] = 0.0  ## stop codon
+        #             aaMuts[secondC] = 4 ## stop codon but nonsyn
+        #     else:
+        #         for secondC in codonlist:
+        #             if secondC == codon:
+        #                 aaDict[secondC] = 1.0  ## same codon exactly
+        #                 aaMuts[secondC] = -10 ## same codon
+        #             elif secondC in synCodons:
+        #                 if aa in nonneutral.keys():
+        #                     aaSelectedCodons = nonneutral[aa]
+        #                     if (secondC in aaSelectedCodons) & (codon in aaSelectedCodons):
+        #                         aaDict[secondC] = args.SynSelDel_s_rescaled  ## both codons found as nonneutral synonymous pairs
+        #                         aaMuts[secondC] = SynSelX # [-, X, -]
+        #                     else:
+        #                         aaDict[secondC] = 1.0 ## synonymous but these two are neutral
+        #                         aaMuts[secondC] = SynNeuX # [-, -, X]
+        #                 else:
+        #                     aaDict[secondC] = 1.0  # synonymous but none of the codons are nonneutral
+        #                     aaMuts[secondC] = SynSelX # [-, -, X]
+        #             elif secondC in stopCodons:
+        #                 aaDict[secondC] = 0.0  ## stop codon
+        #                 aaMuts[secondC] = STOPX ## stop codon but nonsyn
+        #             else:
+        #                 aaDict[secondC] = args.NonSyn_s_rescaled  # nonsynonmous
+        #                 aaMuts[secondC] = NonSynDelX  # [X, -, - ]
 
-            if codon in stopCodons:
-                for secondC in codonlist:
-                    aaDict[secondC] = 0.0  ## stop codon
-                    aaMuts[secondC] = 3 ## stop codon but nonsyn
-            else:
-                for secondC in codonlist:
-                    if secondC == codon:
-                        aaDict[secondC] = 1.0  ## same codon exactly
-                        aaMuts[secondC] = -10 ## same codon
-                    elif secondC in synCodons:
-                        if aa in nonneutral.keys():
-                            aaSelectedCodons = nonneutral[aa]
-                            if (secondC in aaSelectedCodons) & (codon in aaSelectedCodons):
-                                aaDict[secondC] = args.SynSel_s_rescaled  ## both codons found as nonneutral synonymous pairs
-                                aaMuts[secondC] = 1 # [-, X, -]
-                            else:
-                                aaDict[secondC] = 1.0 ## synonymous but these two are neutral
-                                aaMuts[secondC] = 2 # [-, -, X]
-                        else:
-                            aaDict[secondC] = 1.0  # synonymous but none of the codons are nonneutral
-                            aaMuts[secondC] = 2 # [-, -, X]
-                    elif secondC in stopCodons:
-                        aaDict[secondC] = 0.0  ## stop codon
-                        aaMuts[secondC] = 0 ## stop codon but nonsyn
-                    else:
-                        aaDict[secondC] = args.NonSyn_s_rescaled  # nonsynonmous
-                        aaMuts[secondC] = 0 # [X, -, - ]
-
-            selectedDict[codon] = aaDict
-            mutDict[codon] = aaMuts
+        #     selectedDict[codon] = aaDict
+        #     mutDict[codon] = aaMuts
     else: #"codonpairs"
         tempd = {}
         for aa in nonneutral:
@@ -332,35 +364,42 @@ def createSelectedDictionary(args):
         for c1,codon1 in enumerate(codonlist):
             aaDict = {}
             aaMuts = {}
-            aa1 = revCodons[codon1]
-            synCodons = codons[aa1]            
+            aa1 = revcodondic[codon1]
+            synCodons = codondic[aa1]            
             for c2,codon2 in enumerate(codonlist):
-                aa2 = revCodons[codon2]
+                aa2 = revcodondic[codon2]
                 if codon1 in stopCodons or codon2 in stopCodons:
                     aaDict[codon2] = 0.0  ## stop codon
-                    aaMuts[codon2] = 3 ## stop codon 
+                    aaMuts[codon2] = STOPX ## stop codon 
                 elif codon2 == codon1:
                     aaDict[codon2] = 1.0  ## same codon exactly
                     aaMuts[codon2] = -10 ## same codon  
                 elif aa1 != aa2:    
                     aaDict[codon2] = args.NonSyn_s_rescaled  # nonsynonmous
-                    aaMuts[codon2] = 0 # [X, -, - ]              
+                    aaMuts[codon2] = NonSynDelX  # [X, -, - ]              
                 else:
                     assert codon2 in synCodons
+                    correctorder = synCodons.index(codon1) < synCodons.index(codon2)
                     if tempd[codon1][codon2] == "NEUTRAL":
                         aaDict[codon2] = 1.0  # synonymous but neutral
-                        aaMuts[codon2] = 2 # [-, -, X]
+                        aaMuts[codon2] = SynNeuX # [-, -, X]
                     else:
-                        assert tempd[codon1][codon2] == "SELECTED"
-                        aaDict[codon2] = args.SynSel_s_rescaled  ## both codons found as nonneutral synonymous pairs
-
-                           
-                        aaMuts[codon2] = 1 # [-, X, -]
+                        # assert tempd[codon1][codon2] == "SELECTED"
+                        # the codons are ordered in codondic and codonlist,  such that the high fitness ones 
+                        # come first. Any pair of syn codons, codon1 and codon2,  with indices such that c1<c2 
+                        # represents a pair for which the change (i.e. from codon1 to codon2) is to a lower fitness
+                        # so the value in this structure is args.SynSelDel_s_rescaled
+                        #  if c1 > c2 then the change from codon 1 to codon 2 is to a higher fitness 
+                        # so the value in this structures is  args.SynSelFav_s_rescaled
+                        if c1 < c2:
+                            aaDict[codon2] = args.SynSelDel_s_rescaled  ## both codons found as nonneutral synonymous pairs
+                        else:
+                            aaDict[codon2] =  args.SynSelFav_s_rescaled
+                        aaMuts[codon2] = SynSelX # [-, X, -]
             selectedDict[codon1] = aaDict
             mutDict[codon1] = aaMuts
 
-    return selectedDict, mutDict,optimalcodons
-
+    return selectedDict, mutDict
 
 def maketreeshape(numSpecies):
     """
@@ -388,13 +427,18 @@ def maketreeshape(numSpecies):
                         4: ['p4', 0.5, 'p1'],
                         5: ['p5', 0.75, 'p1']}
         mean_branches_root_to_tip = 2.8
-    else: #numspecies = 4
+    elif numSpecies == 4:
         tree = '(((p1,p4),p3),p2);'
         split_generations = {1: ['p1', 1, None],
                         2: ['p2', 0.0, 'p1'],  #0.3
                         3: ['p3', 0.4, 'p1'],
                         4: ['p4', 0.8, 'p1']}
         mean_branches_root_to_tip = 2.25
+    else: #numSpecies == 1
+        tree = '(p1);'
+        split_generations = {1: ['p1', 1, None]}
+        mean_branches_root_to_tip = 1
+
     return tree,split_generations,mean_branches_root_to_tip 
 
 def makefastafile(samples, fn):
@@ -414,7 +458,7 @@ class chromosome():
     def __init__(self,sequence,fitness,args,mcounts,ancestornumber):
         """
         mcounts :  nummutationtypes positions 
-            0,1,2 or 3 for nonsynonymous,  synonymous-selected, synonymous-neutral, and STOP 
+            0,1,2,3 or 4  for nonsynonymous deleterious, nonsynonymous favored,  synonymous-selected, synonymous-neutral, and STOP 
         re ancestornumber:
           is just the index of the chromosome in the list
           it is reset at the beginning of burn2
@@ -432,10 +476,9 @@ class chromosome():
         self.fitness = fitness
         self.mcounts = [mcounts[i] for i in range(nummutationtypes)]
         self.ancestornumber = ancestornumber
-        self.optimalcodons = args.optimalcodons
-        self.PosSynSel_s_rescaled = args.PosSynSel_s_rescaled
+        self.SynSelFav_s_rescaled = args.SynSelFav_s_rescaled
 
-    def mutate(self,popancestor):
+    def mutate(self,popancestor,adaptivechanges):
         """
             a function that changes the sequence s and recalculates fitness
             it uses exponential to get the distance to the next mutation as an approximation for geometric
@@ -446,6 +489,8 @@ class chromosome():
             
         """
         global mutationlocations # use in debug mode 
+        global  NonSynDelX,  NonSynFavX, SynSelX,  SynNeuX, STOPX 
+        global revcodondic
         pos = 0 # a position that mutates  (if not past the end of the sequence)	
         lastcodonpos = -1
         
@@ -476,12 +521,14 @@ class chromosome():
                     bps.remove(self.s[ml:ml+1])
                     self.s = self.s[:ml] + np.random.choice(bps) + self.s[ml+1:]
                 ## update fitness
-                xx = np.random.randint(1000000000000)
                 anc,newCodon,muttype = self.fitnessfunction(mutlocs[0], oldCodon,popancestor)
+                if muttype == NonSynDelX:
+                    codonpos = mutlocs[0] //3
+                    if codonpos in adaptivechanges and revcodondic[newCodon] == adaptivechanges[codonpos]:
+                        muttype = NonSynFavX
                 if self.debugmutloc:
                     for ml in mutlocs:
                         mutationlocations[ml] += 1
-                # muttype = self.mutstruct[oldCodon][newCodon]
                 self.mcounts[muttype] += 1
                 mainmutationcounter[muttype] += 1
                 if pos > len(self.s):
@@ -505,17 +552,21 @@ class chromosome():
         fitness times the fitness associated with a change from ancestor to the new codon (i.e. the absolute fitness of the new codon at that position)
         and by dividing by the fitness associate with a change from the ancestor to the old codon 
         """
-        stopCodons = ['TAG', 'TAA', 'TGA']
+        global SynSelX, NonSynDelX,NonSynFavX,STOPX 
+        global stopCodons
+        # global px,nx
         anc, newSelf = self.findCodon(mut,popancestor)
         assert newSelf != oldcodon
+        
         muttype = self.mutstruct[oldcodon][newSelf]
-        if muttype == 1:
-            if self.optimalcodons[newSelf]:
-                self.fitness *=  self.PosSynSel_s_rescaled # selected AND favored 
-            else:
-                self.fitness *=  self.fitstruct[oldcodon][newSelf]
-        else:
-            self.fitness *=  self.fitstruct[anc][newSelf] / self.fitstruct[anc][oldcodon]
+        if muttype == SynSelX:
+            self.fitness *=  self.fitstruct[oldcodon][newSelf]
+            # if self.fitstruct[oldcodon][newSelf] > 1:
+            #     px +=1
+            # else:
+            #     nx += 1
+        elif muttype == NonSynDelX or muttype == STOPX:
+            self.fitness *= self.fitstruct[anc][newSelf] / self.fitstruct[anc][oldcodon]
         return anc,newSelf, muttype
 
     def getOldCodon(self, i):
@@ -577,6 +628,7 @@ class population(list):
         else:# at the beginning, fill up the pouplation with chromosomes made from the ancestor 
             for i in range(self.popsize2):
                 self.append(chromosome(source,1,args, [0 for j in range(nummutationtypes)],i))
+        self.adaptivechanges = {}
 
     def generation(self):
         """
@@ -610,13 +662,31 @@ class population(list):
             for i in parentgroup:
                 #copy the chromosome.  this is much, much faster than deepcopy
                 child = chromosome(self[i].s,self[i].fitness,self.args,self[i].mcounts,self[i].ancestornumber)
-                child.mutate(self.popancestor)
+                child.mutate(self.popancestor,self.adaptivechanges)
                 newpop.append(child)
         self.clear()
         for child in newpop:
             self.append(child)
         return numfits
     
+    def changeancestor(self):
+        global codondic,revcodondic,aalist
+        pos = np.random.randint(self.args.aalength)
+        codon = self.popancestor[3*pos:3*pos+3]
+        aa = revcodondic[codon]
+        while True:
+            newaa = np.random.choice(aalist)
+            if newaa not in (aa,'STOP'):
+                break
+        newcodon = np.random.choice(codondic[newaa])
+        self.popancestor = self.popancestor[:3*pos] + newcodon + self.popancestor[3*(pos+1):]
+        assert len(self.popancestor) == 3*self.args.aalength
+        for c in self:
+            if revcodondic[c.s[3*pos:3*pos+3]] != newaa:
+                c.fitness *= self.args.NonSyn_s_rescaled
+        self.adaptivechanges[pos] = newaa
+        return pos,newaa
+        
     def checkancestors(self):
         anc0 = self[0].ancestornumber
         allthesame = all(anc0 == c.ancestornumber for c in self)
@@ -672,7 +742,7 @@ class tree():
         """
         samples sequences at the end of the run
         """
-        stopCodons = ['TAG', 'TAA', 'TGA']
+        global stopCodons
         samples = {}
         for pop in self.pops.keys():
             while True: # avoid sampling an individual with a stop codon, will hang if all individuals have a stop codon
@@ -691,11 +761,12 @@ class tree():
         """
         meanfit = 0
         popkeys = self.pops.keys()
+        nvals = 1
         for pop in popkeys:
-            num = np.random.randint(self.args.popsize2)
-            temp = self.pops[pop][num].fitness
-            meanfit += temp
-        return meanfit/len(popkeys)
+            nvals *= len(pop)
+            for c in self.pops[pop]:
+                meanfit += c.fitness
+        return meanfit/nvals
 
     def fitmutsummary(self):
         """
@@ -715,10 +786,55 @@ class tree():
             mcountlist.append(self.pops[pop][num].mcounts)
         return meanfit/len(popkeys),fitlist,mcountlist
     
+
+
     def summarize_results(self,starttime):
+
+        class   substitution_info():
+            def __init__(self,label, count,subs,totalcount,totalnumgen,args,parent=None):
+                if parent is not None:
+                    self.label = parent + "_" + label
+                else:
+                    self.label = label
+                while len(self.label) < 18:
+                    self.label += ' '
+                self.count = count 
+                self.subs = subs
+                self.mutproportion = count/totalcount
+                self.ebp = 3*args.aalength*self.mutproportion
+                self.mutperebp = np.nan if self.ebp == 0 else self.count/self.ebp
+                self.subrate = np.nan if self.ebp == 0 else self.subs/self.ebp
+                self.totalnumgen = totalnumgen
+                self.args = args
+
+            def tablestr(self,tabletype,withheader):
+                if withheader == False:
+                    header = ""
+                else:
+                    if tabletype == "Mutation":
+                        header = "\nMutation Total Counts/Rates\n\tmutation_type    total_count  effective_#bp  proportions	mutations_per_effective_bp:\n"
+                    else: # tabletype == "Substitution"
+                        header = "\nSubstitution Counts/Rates\n\tsubstitution_type	count_per_gene	per_effective_bp	per_effective_bp_per_branch	per_effective_bp_per_generation\n"
+                if tabletype == "Mutation":
+                    return "{}\t{}\t{:>12d}\t{:>3.1f}\t{:>6.3g}\t{:.3g}\n".format(header,self.label,self.count,self.ebp,self.mutproportion,self.mutperebp)
+                else:
+                    assert tabletype == "Substitution"
+                    return "{}\t{}\t{:>4.1f}\t{:>4.3g}\t{:>3.3g}\t{:.3g}\n".format(header,self.label,self.subs,self.subrate,self.subrate/self.args.mean_branches_root_to_tip ,self.subrate/self.totalnumgen)
+
+            def ratiostr(self,denominator,label,withheader=False):
+                if withheader == False:
+                    header = ""
+                else:
+                    header = "\nRate Ratios:\n"
+                while len(label) < 65:
+                    label += ' '
+                ratio = np.nan if denominator.subrate == 0 else self.subrate/denominator.subrate 
+                return "{}\t{}\t{:.3g}\n".format(header,label,ratio)
+
         global mainmutationcounter
         global nummutationtypes
-        mnames = ["NonSynonymous ","Synonymous_Sel","Synonymous_Neu","Stop"]
+        global NonSynDelX, NonSynFavX, SynSelX, SynNeuX, STOPX
+        mnames = ["NonSyn_Del","NonSyn_Fav","Synon_Sel","Synon_Neu","Stop"]
         meanfit,fitlist,mcountlist = self.fitmutsummary()
         rf = open(self.args.resultsfilename,'w')
         rf.write("mss_sim\n\narguments:\n")
@@ -734,48 +850,66 @@ class tree():
         rf.write("\nFinal Mean Fitness: {:.4g}\n".format(meanfit))
         rf.write("\nMean number of fitness values each generation: {:.1f}\nMean number of individuals per fitness value: {:.1f}\n".format(self.args.meannumfits,self.args.popsize2/self.args.meannumfits))
         rf.write("\nSampled Individual Fitnesses: {}\n".format(fitlist))
-        rf.write("\nSampled Individual Mutation Counts ([NonSyn,Syn-Sel,Syn-Neu,STOP]): {}\n".format(mcountlist))            
-        rf.write("\nMutation Total Counts/Rates (per effective bp)\n")
-        rf.write("\tmutation_type\tcounts\teffective_#bp\tproportions\tmutations_per_effective_bp:\n")
-        totsum = sum(mainmutationcounter)
-        effectivenumbp = []
-        mutperebp = []
-        propebp = []
-        for i in range(nummutationtypes):
-            propebp.append(mainmutationcounter[i]/totsum)
-            effectivenumbp.append(3*self.args.aalength*propebp[i])
-            mutperebp.append(np.nan if effectivenumbp[i] == 0 else mainmutationcounter[i]/effectivenumbp[i])
-            rf.write("\t{}\t{:d}\t{:.0f}\t{:.3g}\t{:.3g}\n".format(mnames[i],mainmutationcounter[i],effectivenumbp[i],propebp[i],mutperebp[i]))
-        rf.write("\nSubstitutions per gene copy Counts/Rates (per effective bp)\n")
-        rf.write("\tsubstitution_type\tmean counts per gene\tsubstitutions_per_effective_bp\tsubstitutions_per_effective_bp_per_branch\tsubstitutions_per_effective_bp_per_generation\n")
+        rf.write("\nSampled Individual Mutation Counts ({}): {}\n".format(mnames,mcountlist))  
+
+        totalnumgen = self.args.treeDepth + self.args.burn2_generation_time
+        allmuttotsum = sum(mainmutationcounter)
         subsum = [0 for i in range(nummutationtypes)]
         for mc in mcountlist:
             for i in range(nummutationtypes):
                 subsum[i] += mc[i]
         for i in range(nummutationtypes): # take the mean count per sampled chromosome
             subsum[i] /= self.args.numSpecies
-        subrates = []
-        totalnumgen = self.args.treeDepth + self.args.burn2_generation_time
-        for i in range(nummutationtypes):
-            subrates.append(np.nan if effectivenumbp[i] == 0 else subsum[i]/effectivenumbp[i])
-            self.args.mean_branches_root_to_tip 
-            rf.write("\t{}\t{:.1f}\t{:.3g}\t{:.3g}\t{:.3g}\n".format(mnames[i],subsum[i],subrates[i],subrates[i]/self.args.mean_branches_root_to_tip ,subrates[i]/totalnumgen))
-        #positions in mutation, substitution arrays of length 4 
-        NonSpos = 0
-        SynSelpos = 1
-        SynNeupos = 2
-        STOPpos = 3
-        rf.write("\nRate Ratios:\n")
-        total_syn_effectivenumbp = effectivenumbp[SynSelpos]+ effectivenumbp[SynNeupos]
-        total_syn_sub_rate = (subsum[SynSelpos] + subsum[SynNeupos])/total_syn_effectivenumbp
-        rf.write("\tdN/dS (Nonsynonymous/Synonymous (selected and neutral))\t{:.3g}\n".format(np.nan if total_syn_sub_rate == 0 else subrates[NonSpos]/total_syn_sub_rate))
-        rf.write("\tdN/dSn (Nonsynonymous/Synonymous_Neu))\t{:.3g}\n".format(np.nan if subrates[NonSpos] == 0 else subrates[NonSpos]/subrates[SynNeupos]))
-        rf.write("\tdSs/dSn (Synonymous_Sel/Synonymous_Neu)\t{:.3g}\n".format(np.nan if subrates[SynSelpos] == 0 else subrates[SynSelpos]/subrates[SynNeupos]))
+
+        #populate substitution info list
+        # global NonSynDelX, NonSynFavX, SynSelX, SynNeuX, STOPX
+        subinfolist = []
+        # all nonsynonymous subinfolist[0]
+        allmuts = mainmutationcounter[NonSynDelX] + mainmutationcounter[NonSynFavX]
+        meansubs = subsum[NonSynDelX] + subsum[NonSynFavX]
+        subinfolist.append(substitution_info("NonSyn",allmuts,meansubs,allmuttotsum,totalnumgen,self.args))
+        # nonsynonymous deleterious subinfolist[1]
+        subinfolist.append(substitution_info("Deleterious",mainmutationcounter[NonSynDelX],subsum[NonSynDelX],allmuttotsum,totalnumgen,self.args,parent="NonSyn"))
+        # nonsynonymous favored subinfolist[2]
+        subinfolist.append(substitution_info("Favored",mainmutationcounter[NonSynFavX],subsum[NonSynFavX],allmuttotsum,totalnumgen,self.args,parent="NonSyn"))
+        # all synonymous subinfolist[3]
+        allmuts = mainmutationcounter[SynSelX] + mainmutationcounter[SynNeuX]
+        meansubs = subsum[SynSelX] + subsum[SynNeuX]
+        subinfolist.append(substitution_info("Synon",allmuts,meansubs,allmuttotsum,totalnumgen,self.args))
+        # synonymous selected  subinfolist[4]
+        subinfolist.append(substitution_info("Selected",mainmutationcounter[SynSelX],subsum[SynSelX],allmuttotsum,totalnumgen,self.args,parent="Synon"))
+        # synonymous neutral subinfolist[5]
+        subinfolist.append(substitution_info("Neutral",mainmutationcounter[SynNeuX],subsum[SynNeuX],allmuttotsum,totalnumgen,self.args,parent="Synon"))
+        # STOP  subinfolist[6]
+        subinfolist.append(substitution_info("STOP",mainmutationcounter[STOPX],subsum[STOPX],allmuttotsum,totalnumgen,self.args))
+
+        #print tables
+        tabletype = "Mutation"
+        for i,sb in enumerate(subinfolist):
+            rf.write(sb.tablestr(tabletype,i==0))
+        tabletype = "Substitution"
+        for i,sb in enumerate(subinfolist):
+            rf.write(sb.tablestr(tabletype,i==0))
+        #rate ratios
+        rf.write(subinfolist[1].ratiostr(subinfolist[3],"\tdN*/dS (Nonsynonymous_deleterious/Synonymous (selected and neutral)",withheader=True))
+        rf.write(subinfolist[0].ratiostr(subinfolist[3],"\tdN/dS (Nonsynonymous_total/Synonymous (selected and neutral)"))
+        rf.write(subinfolist[1].ratiostr(subinfolist[5],"\tdN*/dSn (Nonsynonymous_deleterious/Synonymous_Neu)"))
+        rf.write(subinfolist[0].ratiostr(subinfolist[5],"\tdN/dSn (Nonsynonymous_total/Synonymous_Neu)"))
+        rf.write(subinfolist[4].ratiostr(subinfolist[5],"\tdSs/dSn (Synonymous_Sel/Synonymous_Neu)"))
+     
         totaltime = time.time()-starttime
         rf.write("\ntotal time: {}\n".format(time.strftime("%H:%M:%S",time.gmtime(totaltime))))
         rf.close()
 
     def run_burn1(self):
+        """
+        just run 10xpopsize2 generations
+        """
+        for i in range(10*self.args.popsize2):
+            self.pop0.generation()
+        meanfit = sum([c.fitness for c in self.pop0])/len(self.pop0)
+        self.pop0.reset_mutation_counts()   
+        return i+1,meanfit
         """
         loop over generations until meanfitness appears to stop going down
         this is very crude and does not really find the point when mutation stops declining (if at all)
@@ -821,7 +955,7 @@ class tree():
         """
         calls run_burn1(), run_burn2() and then  runs for treedepth generations
         """
-
+        # global px,nx
         self.args.burn1_generation_time,self.args.burn1_mean_fitness = self.run_burn1()
         self.args.burn2_generation_time = self.run_burn2()
         self.args.mutationexpectation_adjusted_for_burn2 = (self.args.mutationexpectation * self.args.treeDepth)/(self.args.treeDepth + self.args.burn2_generation_time)
@@ -838,6 +972,8 @@ class tree():
                 self.pops[splitPop[0]] = population(splitPop[0], self.pops[splitPop[1]], self.args)
 
             for key in self.pops.keys():
+                if np.random.random() < self.args.adaptchangerate:
+                    aapos,newaa = self.pops[key].changeancestor()
                 numdifferentfitnessvalues = self.pops[key].generation()
                 self.args.meannumfits += numdifferentfitnessvalues
                 countpopgens +=1
@@ -851,7 +987,8 @@ class tree():
             gen += 1
             if self.args.debug and gen % self.args.popsize2 == 0:
                 meanfit = self.fitCheck()
-                print("generation {} ({:.1f}%)  # populations: {}  mean fitness: {:.4f}".format(gen,100*gen/self.args.treeDepth,len(self.pops.keys()),meanfit))
+                print("generation {} ({:.1f}%)  # populations: {}  mean fitness: {:.4f}  sample mutation counts: {}".format(gen,100*gen/self.args.treeDepth,len(self.pops.keys()),meanfit,self.pop0[0].mcounts))
+                # print(px,nx,"generation {} ({:.1f}%)  # populations: {}  mean fitness: {:.4f}  sample mutation counts: {}".format(gen,100*gen/self.args.treeDepth,len(self.pops.keys()),meanfit,self.pop0[0].mcounts))
         self.args.meannumfits /= countpopgens
         sample = self.samplefrompops()
         return sample
@@ -864,14 +1001,16 @@ def parseargs():
     parser.add_argument("-e", help="random number seed for simulation (and for picking alignment if needed)",dest="ranseed",type=int)
     parser.add_argument("-F", help="directory path for output fasta file (default is same as for results file)",dest="fdir",type = str)
     parser.add_argument("-g", help="bacterial gene name, optional - if not used a random gene is selected",dest="genename",type=str)
-    parser.add_argument("-k", help="Number of species (4,5 or 11)",dest="numSpecies",default=4,type=int)
+    parser.add_argument("-k", help="Number of species (1, 4,5 or 11)",dest="numSpecies",default=4,type=int)
     parser.add_argument("-L", help="Length of sequence (# amino acids)", dest="aalength",default=300,type=int)
     parser.add_argument("-m", help="Model file path",dest="mssmodelfilename",required = True,type = str)
     parser.add_argument("-N", help="Population size (diploid)",dest="popsize",default=10,type=int)
     parser.add_argument("-R", help="directory path for results file",dest="rdir",default = ".",type = str)
+    parser.add_argument("-q", help="compress/expand run time ", dest="treerescaler",default = 1.0, type=float)
     parser.add_argument("-s", help="Synonymous population selection coefficient, 2Ns (Slim uses 1-(2Ns/2N))", dest="SynSel_s",default=2,type=float)
     parser.add_argument("-y", help="Non-synonymous population selection coefficient, 2Ns (Slim uses 1-(2Ns/2N))", dest="NonSyn_s",default=10,type=float)
     parser.add_argument("-u", help="expected number of neutral mutations per site, from base of tree", dest="mutationexpectation",default=0.5,type=float)
+    parser.add_argument("-w", help="rate per generation of adaptive amino acid change", dest="adaptchangerate",default=0.0,type=float)
     return parser
 
 def main(argv):
@@ -882,17 +1021,18 @@ def main(argv):
     args = parser.parse_args(argv)
     if args.ranseed != None:
         np.random.seed(args.ranseed)
-    if args.numSpecies not in [4,5,11]:
-        print ("error: -p (# of species) must be 4,5 or 11")
+    if args.numSpecies not in [1, 4,5,11]:
+        print ("error: -p (# of species) must be 1, 4,5 or 11")
         exit()
     args.meannumfits = 0
     args.popsize2 = args.popsize*2
-    args.treeDepth = 100000 # fixed at a specific value # previously scaled by population size  args.treeDepth * args.popsize
-    args.mutrate = args.mutationexpectation/args.treeDepth  # got rid of using theta 4Nu,  as not really relevant here 
+    args.defaulttreeDepth = 100000 # fixed at a specific value # previously scaled by population size  args.treeDepth * args.popsize
+    args.mutrate = args.mutationexpectation/args.defaulttreeDepth  # got rid of using theta 4Nu,  as not really relevant here 
+    args.treeDepth = round(args.defaulttreeDepth * args.treerescaler)
     #rescale the selection coefficients from 2Ns values to Slim values
-    args.SynSel_s_rescaled = max(0.0,1.0 - (args.SynSel_s/(args.popsize2)))
-    args.PosSynSel_s_rescaled = 1.0 + (1.0 - args.SynSel_s_rescaled)
-
+    args.SynSelDel_s_rescaled = max(0.0,1.0 - (args.SynSel_s/(args.popsize2)))
+    # args.SynSelFav_s_rescaled = 1.0/args.SynSelDel_s_rescaled 
+    args.SynSelFav_s_rescaled = 1.0 + (1.0 - args.SynSelDel_s_rescaled)
     args.NonSyn_s_rescaled = max(0.0,1.0 - (args.NonSyn_s/(args.popsize2)))
     if args.NonSyn_s_rescaled <= 0.0:
         print("fitness error")
@@ -910,8 +1050,6 @@ def main(argv):
         os.chdir(curdir)
     except:
         pass
-
-
     if args.fdir== None:
         args.fdir=args.rdir
     else:
@@ -928,22 +1066,30 @@ def main(argv):
         except:
             pass  
         
-    
-    #update this when mutating
-    global mainmutationcounter
+    #create global vars
+
+    # global px, nx  
+    # px = nx = 0
+
+    global mainmutationcounter #when debug update this when mutating
     global nummutationtypes
-    nummutationtypes = 4
+    global  NonSynDelX,  NonSynFavX, SynSelX,  SynNeuX, STOPX # all refer to positions in the mutation counter arrays,  all end in 'X' 
+    nummutationtypes = 5
+    NonSynDelX = 0
+    NonSynFavX = 1
+    SynSelX = 2
+    SynNeuX = 3
+    STOPX = 4
+    global codondic, aalist, codonlist, revcodondic,optimalcodons,aa1letterdic,stopCodons
+    codondic, aalist, codonlist, revcodondic,optimalcodons,aa1letterdic,stopCodons = codonInfo()
     mainmutationcounter = [0 for i in range(nummutationtypes)]  #positions 0,1,2 or 3 for nonsynonymous,  synonymous-selected, synonymous-neutral, and STOP 
-    
-    # when debugging for checking distribution of mutation locations
-    global mutationlocations
+    global mutationlocations # used when debugging for checking distribution of mutation locations
     mutationlocations = [0 for i in range(3*args.aalength)]
 
     # get ancestral sequence
     dnaStrand,genefilename = createCodonSequence(args.bacaligndir,gene=args.genename)# if args.genename is None,  then a random gene is picked 
     args.genename = genefilename[:genefilename.find('_')]
-    # args.ancestor = makeAncestor(dnaStrand, args.aalength)
-
+    args.ancestor = makeAncestor(dnaStrand, args.aalength)
 
     args.resultsfilename = op.join(args.rdir,args.basename +  "_" + args.genename + '_results.txt')
     if os.path.exists(args.resultsfilename):
@@ -955,10 +1101,10 @@ def main(argv):
     # set tree shape
     args.tree, args.split_generations,args.mean_branches_root_to_tip = maketreeshape(args.numSpecies)
 
-    ## create selected dictionary
-    args.fitnessstructure, args.mutstructure,args.optimalcodons = createSelectedDictionary(args)
-    # args.ancestor = makeAncestor2(dnaStrand, args.aalength,args.fitnessstructure)
-    args.ancestor = makeAncestor(dnaStrand, args.aalength)
+    ## create selected dictionary and ancestor
+    args.fitnessstructure, args.mutstructure = createSelectedDictionary(args)
+    args.optimalcodons = optimalcodons
+    
 
     # run the simulation
     sim = tree(args, args.ancestor)
@@ -966,8 +1112,6 @@ def main(argv):
     sim.summarize_results(starttime)
     if args.debug:
         print("mutation counts by base position\n",mutationlocations)
-    
-    totaltime = time.time()-starttime
     makefastafile(sampledsequences, args.fastafilename)
 
 if __name__ == "__main__":

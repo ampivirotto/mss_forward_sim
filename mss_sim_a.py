@@ -21,6 +21,7 @@
       and the fitness goes up and up for awhile. 
     
 
+      
     The alternative to such schemes would be to have a ranking among the synonymous codons for an amino acid 
         which would require having more fitness values for synonymous changes , and thus more fitness values among chromosomes 
         

@@ -1,4 +1,10 @@
 """
+    5/5/2023 
+
+    implemented a method for starting with an ancestral sequence that is close the equilibrium for preferred
+    and unpreferred codons
+    see makeAncestor()
+
     5/1/2023
     Handling selection for synonymous changes
     If all syn changes have the same value in the selection structure dictionary then
@@ -71,7 +77,7 @@
         burnin period 1 proceeds until population mean fitness decline has slowed or stopped
         burnin period 2 proceeds until the entire population is descended from a single chromosome that was present 
             in the generation that burnin period 2 started. 
-            this establishes a time that should actually be the tmrca for ree for the sequences sampled at the end 
+            this establishes a time that should actually be the tmrca for sequences sampled at the end 
 
     phylogeny
         a fixed phylogeny over 100000 generations is simulated
@@ -170,21 +176,63 @@ def getCodonProportions(dna):
 
     return codons
 
-def makeAncestor(allDNA, aalen):
+def makeAncestor(allDNA, args):
     """
-    take allDNA and take a random assortment of codons based on appearing in allDNA
-
-    Then replace each codon with the most fit codon for the corresponding amino acid.
+    Try to make an ancestral sequence that is at the equilibrium for preferred and unpreferred codons 
+    1.take allDNA and take a random assortment of codons based on appearing in allDNA
+    2. replace each codon with the most fit codon (leftmost in codon dictionary) for the corresponding amino acid.
+    2a. for 6 fold,  if a codon is in 2fold subset,  keep leftmost of the 2fold subset
+    3. estimate equilibrium frequencies of favored and disfavored codons.
+    4. replace favored codons with random disfavored codons  at equilibrium frequency 
     """
     global codondic,revcodondic
+
+    ncodondic = {}
+    for aa in codondic:
+        if len(codondic[aa]) == 6:
+            ncodondic[aa+"4"] = codondic[aa][:4]
+            ncodondic[aa+"2"] = codondic[aa][4:]
+        elif aa != "STOP":
+            ncodondic[aa] = codondic[aa]
+    nrevcodondic  = {}
+    aalist = []
+    optcodon = {}
+    for aa in ncodondic.keys():
+        aalist.append(aa)
+        if aa != "STOP":
+            optcodon[aa] = ncodondic[aa][0]
+            for cd in ncodondic[aa]:
+                nrevcodondic[cd] = aa        
+    
+    expterm = np.exp(2*args.SynSel_s)
+    expprobs = {}
+    expprobs[2] = [expterm/(1+expterm),1/(1+expterm)]
+    expprobs[3] = [(0.75*expterm)/(1+0.75*expterm),1/(1+0.75*expterm)]
+    expprobs[4] = [(1/3)*expterm/(1+(1/3)*expterm),1/(1+(1/3)*expterm)]
+
     props = getCodonProportions(allDNA)
-    ancestor = np.random.choice(list(props.keys()), size = aalen, p = list(props.values()))
+    ancestor = np.random.choice(list(props.keys()), size = args.aalength, p = list(props.values()))
     bestcodonancestor = []
+    fitness = 1.0 
     for codon in ancestor:
-        aa = revcodondic[codon]
-        newcodon = codondic[aa][0] # the first codon in the list is arbitrarily specified to be the most fit 
+        aa = nrevcodondic[codon]
+        newcodon = ncodondic[aa][0] # the first codon in the list is arbitrarily specified to be the most fit 
+        if '2' in aa: # S, R or L 
+            fitness *= args.SynSelDel_s_rescaled
         bestcodonancestor.append(newcodon)
-    return ''.join(bestcodonancestor)
+
+    ancestor = []
+    nc = 0
+    for codon in bestcodonancestor:
+        aa = nrevcodondic[codon]
+        if len(ncodondic[aa]) > 1 and np.random.random() < expprobs[len(ncodondic[aa])][1]: # change to a less favored codon
+            newcodon = np.random.choice(ncodondic[aa][1:])
+            fitness *= args.fitnessstructure[codon][newcodon] 
+            ancestor.append(newcodon)
+            nc += 1
+        else:
+            ancestor.append(codon)
+    return ''.join(ancestor),fitness
 
 
 def countCodons(dna):
@@ -493,7 +541,6 @@ class chromosome():
         global revcodondic
         pos = 0 # a position that mutates  (if not past the end of the sequence)	
         lastcodonpos = -1
-        
         while True:
             # distance_to_mut = np.random.geometric(self.mrate) # geometric a bit slower than exponential
             while True: # gets one or more changes in a codon
@@ -537,6 +584,8 @@ class chromosome():
                     mutlocs = [pos-1] # the next mutation location (pos was previously incremented to the start of the next interval)
             else:
                 break
+        return 
+        
     def resetmcounts(self):
         global nummutationtypes
         self.mcounts = [0 for i in range(nummutationtypes)]
@@ -554,17 +603,12 @@ class chromosome():
         """
         global SynSelX, NonSynDelX,NonSynFavX,STOPX 
         global stopCodons
-        # global px,nx
         anc, newSelf = self.findCodon(mut,popancestor)
         assert newSelf != oldcodon
         
         muttype = self.mutstruct[oldcodon][newSelf]
         if muttype == SynSelX:
             self.fitness *=  self.fitstruct[oldcodon][newSelf]
-            # if self.fitstruct[oldcodon][newSelf] > 1:
-            #     px +=1
-            # else:
-            #     nx += 1
         elif muttype == NonSynDelX or muttype == STOPX:
             self.fitness *= self.fitstruct[anc][newSelf] / self.fitstruct[anc][oldcodon]
         return anc,newSelf, muttype
@@ -627,8 +671,11 @@ class population(list):
                 self.append(chrom)
         else:# at the beginning, fill up the pouplation with chromosomes made from the ancestor 
             for i in range(self.popsize2):
-                self.append(chromosome(source,1,args, [0 for j in range(nummutationtypes)],i))
+                self.append(chromosome(source,args.ancestorfitness,args, [0 for j in range(nummutationtypes)],i))
         self.adaptivechanges = {}
+        # if args.debug:
+        #     self.pxl = []
+        #     self.nxl = []
 
     def generation(self):
         """
@@ -640,6 +687,8 @@ class population(list):
         after each chromosome is sampled,  mutations are added and fitness is recalculated
         replace the old population with the new sampled chromosomes 
         """
+        # if self.args.debug:
+        #     temppx = tempnx = 0
         fits = np.array([c.fitness for c in self],dtype=float)
         unique_vals,indices,counts = np.unique(fits, return_counts=True,return_inverse=True)
         unique_indices = []
@@ -662,11 +711,18 @@ class population(list):
             for i in parentgroup:
                 #copy the chromosome.  this is much, much faster than deepcopy
                 child = chromosome(self[i].s,self[i].fitness,self.args,self[i].mcounts,self[i].ancestornumber)
+                # gpx,gnx = child.mutate(self.popancestor,self.adaptivechanges)
                 child.mutate(self.popancestor,self.adaptivechanges)
+                # if self.args.debug:
+                #     temppx += gpx
+                #     tempnx += gnx
                 newpop.append(child)
         self.clear()
         for child in newpop:
             self.append(child)
+        # if self.args.debug:
+        #     self.pxl.append(temppx)
+        #     self.nxl.append(tempnx)
         return numfits
     
     def changeancestor(self):
@@ -720,11 +776,11 @@ class tree():
         when tree.run() is called it runs the simulation and at the end returns the sample
     """
 
-    def __init__(self,args,ancestor):
+    def __init__(self,args):
         self.treestr = args.tree
         self.args = args
         self.split_generations, self.times = self.translateGens(args.split_generations)
-        self.pop0 = population('p1', ancestor,args)
+        self.pop0 = population('p1', args.ancestor,args)
         self.pops = {}
 
     def translateGens(self, sg):
@@ -759,14 +815,11 @@ class tree():
         #write fitnesses to log file
         return mean fitness
         """
-        meanfit = 0
+        meanfits = []
         popkeys = self.pops.keys()
-        nvals = 1
         for pop in popkeys:
-            nvals *= len(pop)
-            for c in self.pops[pop]:
-                meanfit += c.fitness
-        return meanfit/nvals
+            meanfits.append(sum([c.fitness for c in self.pops[pop]])/len(self.pops[pop]))
+        return meanfits,sum(meanfits)/len(meanfits)
 
     def fitmutsummary(self):
         """
@@ -903,39 +956,28 @@ class tree():
 
     def run_burn1(self):
         """
-        just run 10xpopsize2 generations
+        run for a multiplier,  burn1X, x popsize2 generations
+        200x  seems good enough,  with the 5/5/ version of makeAncestor()
         """
-        for i in range(10*self.args.popsize2):
+        burn1X = 200
+        meanfit = sum([c.fitness for c in self.pop0])/len(self.pop0)
+        for i in range(burn1X*self.args.popsize2):
             self.pop0.generation()
+            # if self.args.debug:
+                # if len(self.pop0.pxl) >= 1000:
+                #     self.pop0.pxl.pop(0)
+                #     self.pop0.nxl.pop(0)
+                # if  i % 1000 == 0:
+                #     meanfit = sum([c.fitness for c in self.pop0])/len(self.pop0)
+                #     # print("generation {} ({:.1f}%)  # populations: {} mean fitnesses: {} overall mean: {:.4f}  sample mutation counts: {}".format(gen,100*gen/self.args.treeDepth,len(self.pops.keys()),meanfits,meanmeanfit,self.pop0[0].mcounts))
+                #     print(i,sum(self.pop0.pxl)/( sum(self.pop0.pxl) + sum(self.pop0.nxl)),meanfit)
+            if self.args.debug and  i % 1000 == 0:
+                    meanfit = sum([c.fitness for c in self.pop0])/len(self.pop0)
+                    print(i, meanfit)                
         meanfit = sum([c.fitness for c in self.pop0])/len(self.pop0)
         self.pop0.reset_mutation_counts()   
         return i+1,meanfit
-        """
-        loop over generations until meanfitness appears to stop going down
-        this is very crude and does not really find the point when mutation stops declining (if at all)
-        but allows process to accumulate a number of mutations so that the mutation counter does not include counts on the ancestral chromosome with fitness 1 
-        """
-        maxburn1gen = 10000 # fail stopping point
-        gen = 0
-        numgens_check_burn1 = 300 # just picked a value 
-        numgenssplit = numgens_check_burn1//3
-        meanfitlist = [] # will include numgens_check_burn1 values.  compare the mean in first third to mean in last third 
-        while True:
-            self.pop0.generation()
-            meanfit = sum([c.fitness for c in self.pop0])/len(self.pop0)
-            meanfitlist.append(meanfit)
-            gen += 1
-            if len(meanfitlist) > numgens_check_burn1:
-                meanfitlist.pop(0)
-                # compare first 3rd of list to last 3rd of list
-                if sum(meanfitlist[:numgenssplit])/numgenssplit < sum(meanfitlist[numgens_check_burn1-numgenssplit:])/numgenssplit:
-                    break
-            if gen > maxburn1gen:
-                print('burn 1 has exceeded {} generations. fitness continues to decline'.format(maxburn1gen))
-                break
-                # exit()
-        self.pop0.reset_mutation_counts()      
-        return gen,sum(meanfitlist)/numgens_check_burn1
+
     
     def run_burn2(self):
         """
@@ -955,7 +997,6 @@ class tree():
         """
         calls run_burn1(), run_burn2() and then  runs for treedepth generations
         """
-        # global px,nx
         self.args.burn1_generation_time,self.args.burn1_mean_fitness = self.run_burn1()
         self.args.burn2_generation_time = self.run_burn2()
         self.args.mutationexpectation_adjusted_for_burn2 = (self.args.mutationexpectation * self.args.treeDepth)/(self.args.treeDepth + self.args.burn2_generation_time)
@@ -977,18 +1018,12 @@ class tree():
                 numdifferentfitnessvalues = self.pops[key].generation()
                 self.args.meannumfits += numdifferentfitnessvalues
                 countpopgens +=1
-
             
-            if self.args.debug == True:
-                if gen % (self.args.popsize2 * 4) == 0:
-                    self.pops[key].checkpop(self.args.aalength, gen)
-                    meanfit = self.fitCheck()
-
             gen += 1
             if self.args.debug and gen % self.args.popsize2 == 0:
-                meanfit = self.fitCheck()
-                print("generation {} ({:.1f}%)  # populations: {}  mean fitness: {:.4f}  sample mutation counts: {}".format(gen,100*gen/self.args.treeDepth,len(self.pops.keys()),meanfit,self.pop0[0].mcounts))
-                # print(px,nx,"generation {} ({:.1f}%)  # populations: {}  mean fitness: {:.4f}  sample mutation counts: {}".format(gen,100*gen/self.args.treeDepth,len(self.pops.keys()),meanfit,self.pop0[0].mcounts))
+                meanfits,meanmeanfit = self.fitCheck()
+                print("generation {} ({:.1f}%)  # populations: {} mean fitnesses: {} overall mean: {:.4f}  sample mutation counts: {}".format(gen,100*gen/self.args.treeDepth,len(self.pops.keys()),meanfits,meanmeanfit,self.pop0[0].mcounts))
+                
         self.args.meannumfits /= countpopgens
         sample = self.samplefrompops()
         return sample
@@ -1067,10 +1102,8 @@ def main(argv):
             pass  
         
     #create global vars
-
-    # global px, nx  
-    # px = nx = 0
-
+    global px, nx
+    px = nx = 0
     global mainmutationcounter #when debug update this when mutating
     global nummutationtypes
     global  NonSynDelX,  NonSynFavX, SynSelX,  SynNeuX, STOPX # all refer to positions in the mutation counter arrays,  all end in 'X' 
@@ -1089,7 +1122,8 @@ def main(argv):
     # get ancestral sequence
     dnaStrand,genefilename = createCodonSequence(args.bacaligndir,gene=args.genename)# if args.genename is None,  then a random gene is picked 
     args.genename = genefilename[:genefilename.find('_')]
-    args.ancestor = makeAncestor(dnaStrand, args.aalength)
+    args.fitnessstructure, args.mutstructure = createSelectedDictionary(args)
+    args.ancestor,args.ancestorfitness = makeAncestor(dnaStrand, args)
 
     args.resultsfilename = op.join(args.rdir,args.basename +  "_" + args.genename + '_results.txt')
     if os.path.exists(args.resultsfilename):
@@ -1102,12 +1136,12 @@ def main(argv):
     args.tree, args.split_generations,args.mean_branches_root_to_tip = maketreeshape(args.numSpecies)
 
     ## create selected dictionary and ancestor
-    args.fitnessstructure, args.mutstructure = createSelectedDictionary(args)
+    # args.fitnessstructure, args.mutstructure = createSelectedDictionary(args)
     args.optimalcodons = optimalcodons
     
 
     # run the simulation
-    sim = tree(args, args.ancestor)
+    sim = tree(args)
     sampledsequences = sim.run()
     sim.summarize_results(starttime)
     if args.debug:

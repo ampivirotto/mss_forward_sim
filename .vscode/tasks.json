@@ -1,0 +1,14 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "austin",
+            "file": "mss_sim_a.py",
+            "args": ["-A","../work/bacalignments/","-b","debug","-e","3","-F","../work/runs/debug",
+                    "-k","4","-L","300","-m","MSS_Codon_Classes_RANDOM_NEUTRAL.tsv","-N","50","-R","../work/runs/debug",
+                    "-s","3","-y","10","-u","1","-w","0","-d"],
+            "label": "Profile mss_sim_a.py",
+            "austinArgs": ["--output=testaustin.out"]
+        }
+    ]
+}

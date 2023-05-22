@@ -1,0 +1,37 @@
+# A,E,F,P, S, Y all neutral
+# G   GGG selected with respect to others
+# I ATT selected with respect to others
+# L  4-fold set neutral, 2 fold set neutral,  between them is selected 
+# R  CGT, CGC :neutral  AND  "CGA", "CGG", "AGA", "AGG": neutral,  between them selected
+# T  ACT, ACC :neutral    ACA, ACG : neutral     between them selected 
+# V  GTT, GTC: neutral    GTA, GTG: neutral  between them selected 
+I ATT
+I ATC ATA
+L CTT CTA CTG CTC 
+L TTG TTA
+V GTT GTC 
+V GTA GTG
+F TTT TTC
+C TGT 
+C TGC
+A GCG GCT GCA GCC
+G GGA GGC GGT 
+G GGG
+P CCA CCC CCT CCG
+T ACC ACT 
+T ACG ACA
+S AGT TCG TCT AGC TCA TCC
+Y TAC TAT
+Q CAA 
+Q CAG
+N AAT 
+N AAC
+H CAT 
+H CAC
+E GAA GAG
+D GAT 
+D GAC
+K AAA 
+K AAG
+R CGC CGT 
+R CGA AGA AGG CGG

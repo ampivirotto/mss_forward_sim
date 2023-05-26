@@ -362,22 +362,22 @@ def createSelectedDictionary(args):
     mutDict = {}
     for c1,codon1 in enumerate(codonlist):
         tempaaDict = {}
-        temaaMuts = {}
+        tempaaMuts = {}
         aa1 = revcodondic[codon1]
         synCodons = codondic[aa1]            
         for c2,codon2 in enumerate(codonlist):
             aa2 = revcodondic[codon2]
             if codon1 in stopCodons or codon2 in stopCodons:
                 tempaaDict[codon2] = 0.0  ## stop codon
-                temaaMuts[codon2] = STOPX ## stop codon 
+                tempaaMuts[codon2] = STOPX ## stop codon 
             elif codon2 == codon1:
                 tempaaDict[codon2] = 1.0  ## same codon exactly
-                temaaMuts[codon2] = -10 ## same codon  
-            else:
+                tempaaMuts[codon2] = -10 ## same codon  
+            elif aa1 != aa2:
                 tempaaDict[codon2] = args.NonSyn_s_rescaled  # nonsynonmous
-                temaaMuts[codon2] = NonSynDelX  # [X, -, - ]   
+                tempaaMuts[codon2] = NonSynDelX  # [X, -, - ]   
         selectedDict[codon1] = tempaaDict
-        mutDict[codon1] = temaaMuts           
+        mutDict[codon1] = tempaaMuts           
     #now go through and set all synonymous changes 
     for aa in neutralsetDict:
         for ni in range(len(neutralsetDict[aa])):

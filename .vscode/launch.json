@@ -13,8 +13,8 @@
             "justMyCode": true,
             //"args":["-A","../work/bacalignments/","-b","debug_time_check_new_nodebug_z","-e","2","-F","../work/runs/debug","-k","1","-L","300","-m","MSS_SINGLE_NEUTRAL_SETS_new_format.tsv","-N","100","-R","../work/runs/debug","-s","3","-y","3","-u","2"]
             "args": ["-A","../work/bacalignments/","-b","xx","-e","2","-F","../work/runs/debug",
-                    "-k","4","-L","300","-m","MSS_SINGLE_NEUTRAL_SETS.tsv","-N","100","-R","../work/runs/debug",
-                    "-s","0.5","-y","3","-u","10","-w","0","-q","0.1","-x"]
+                    "-k","1","-L","300","-m","MSS_MULTIPLE_NEUTRAL_SETS.tsv","-N","100","-R","../work/runs/debug",
+                    "-s","0.5","-y","3","-u","10","-w","0","-q","0.1","-d"]
             //"args": ["-A","../work/bacalignments/","-b","debug_mss_sim_a_nodebug_single_neutral_sets_xx","-e","2","-F","../work/runs/debug",
             //        "-k","1","-L","300","-m","MSS_SINGLE_NEUTRAL_SETS.tsv","-N","100","-R","../work/runs/debug",
             //        "-s","0.5","-y","3","-u","10","-w","0"]

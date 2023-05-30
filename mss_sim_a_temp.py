@@ -264,7 +264,7 @@ def makeAncestor(args):
     expprobs = [0.0,1/(1+expterm),1/(1+(3/4)*expterm),1/(1+(1/3)*expterm)]
 
     ancestor = []
-    nc = 0
+    nc = 0 
     for codon in bestcodonancestor:
         aa = revcodondic[codon]
         if aa in args.neutralsets:

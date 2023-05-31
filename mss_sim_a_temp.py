@@ -260,18 +260,25 @@ def makeAncestor(args):
         else:
             bestcodonancestor.append(codon)
 
-    expterm = np.exp(2*args.SynSel_s)
-    expprobs2 = 1/(1+expterm)  # equilibrium freq of less fit codon, approx
+    expterm = np.exp(2*args.SynSel_s) # crude attempt at equilibrium setting of some synonymous codons to less fit values 
+    expprobs = [0.0,1/(1+expterm),1/(1+(3/4)*expterm),1/(1+(1/3)*expterm)]
 
     ancestor = []
-    nc = 0
+    nc = 0 
     for codon in bestcodonancestor:
         aa = revcodondic[codon]
-        if aa in args.neutralsets and len(args.neutralsets[aa]) ==2 and np.random.random() < expprobs2: # change to a less favored codon
-            newcodon = np.random.choice(list(args.neutralsets[aa][1]))
-            fitness *= args.fitnessstructure[codon][newcodon] 
-            ancestor.append(newcodon)
-            nc += 1
+        if aa in args.neutralsets:
+            k = len(args.neutralsets[aa])
+            if aa in args.neutralsets and np.random.random() < expprobs[k-1]: # change to a less favored codon
+                ri = np.random.randint(k-1)
+                newset = args.neutralsets[aa][1:][ri]
+                newcodon = np.random.choice(list(newset))
+                assert revcodondic[newcodon]==aa
+                fitness *= args.fitnessstructure[codon][newcodon] 
+                ancestor.append(newcodon)
+                nc += 1
+            else:
+                ancestor.append(codon)
         else:
             ancestor.append(codon)
     return ''.join(ancestor),fitness,genefilename
@@ -385,13 +392,36 @@ def createSelectedDictionary(args):
             for (c1,c2) in codonpairs:
                 selectedDict[c1][c2] = selectedDict[c2][c1]  = 1.0  # synonymous but neutral
                 mutDict[c1][c2] = mutDict[c2][c1] = SynNeuX 
-            if len(neutralsetDict) > 1:
+            if len(neutralsetDict[aa]) > 1:
                 for nj in range(ni+1,len(neutralsetDict[aa])):
                     codonpairs = list(itertools.product(neutralsetDict[aa][ni],neutralsetDict[aa][nj]))
                     for (c1,c2) in codonpairs:
-                        selectedDict[c1][c2] = args.SynSelDel_s_rescaled  ## both codons found as nonneutral synonymous pairs
-                        selectedDict[c2][c1] = args.SynSelFav_s_rescaled
-                        mutDict[c1][c2] = mutDict[c2][c1] = SynSelX 
+                        mutDict[c1][c2] = mutDict[c2][c1] = SynSelX         
+                        if len(neutralsetDict[aa])==2: # 2 sets,  a full selective difference apart from each other
+                            selectedDict[c1][c2] = args.SynSelDel_s_rescaled
+                            selectedDict[c2][c1] = args.SynSelFav_s_rescaled
+                        elif len(neutralsetDict[aa])== 3: # 3 sets, 2 steps is a full difference,  sets either 1 or 2 steps apart
+                            if nj-ni==2:
+                                selectedDict[c1][c2] = args.SynSelDel_s_rescaled
+                                selectedDict[c2][c1] = args.SynSelFav_s_rescaled
+                            else:
+                                assert nj-ni==1
+                                selectedDict[c1][c2] = args.SynSelDel_half_s_rescaled
+                                selectedDict[c2][c1] = args.SynSelFav_half_s_rescaled
+                        elif len(neutralsetDict[aa])== 4: # 4 sets, 3 steps is a full difference,  sets either 1, 2 or 3 steps apart
+                            if nj-ni == 3:
+                                selectedDict[c1][c2] = args.SynSelDel_s_rescaled
+                                selectedDict[c2][c1] = args.SynSelFav_s_rescaled
+                            elif nj - ni ==2:
+                                selectedDict[c1][c2] = args.SynSelDel_twothird_s_rescaled
+                                selectedDict[c2][c1] = args.SynSelFav_twothird_s_rescaled
+                            else:
+                                assert nj - ni == 1
+                                selectedDict[c1][c2] = args.SynSelDel_third_s_rescaled
+                                selectedDict[c2][c1] = args.SynSelFav_third_s_rescaled
+                        else:
+                            print("something wrong with neutral sets for {}".format(aa))
+                            exit()
 
     if args.debug and args.debug.usesubtimeinfo:
         codon_substitution_time_info_dict = create_codon_pair_substitution_analysis_structure(selectedDict,mutDict)
@@ -1314,9 +1344,14 @@ def main(argv):
         args.treeDepth = args.defaulttreeDepth
     #rescale the selection coefficients from 2Ns values to Slim values
     args.SynSelDel_s_rescaled = max(0.0,1.0 - (args.SynSel_s/(args.popsize2)))
-    
+    args.SynSelDel_half_s_rescaled = np.power(args.SynSelDel_s_rescaled,1/2)
+    args.SynSelDel_third_s_rescaled = np.power(args.SynSelDel_s_rescaled,1/3)
+    args.SynSelDel_twothird_s_rescaled = np.power(args.SynSelDel_s_rescaled,2/3)
+   
     args.SynSelFav_s_rescaled = 1.0/args.SynSelDel_s_rescaled  # makes more sense to use the reciprocal for a favored change
-    # args.SynSelFav_s_rescaled = 1.0 + (1.0 - args.SynSelDel_s_rescaled)
+    args.SynSelFav_half_s_rescaled = 1.0/args.SynSelDel_half_s_rescaled
+    args.SynSelFav_third_s_rescaled = 1.0/args.SynSelDel_third_s_rescaled
+    args.SynSelFav_twothird_s_rescaled = 1.0/args.SynSelDel_twothird_s_rescaled
     
     args.NonSyn_s_rescaled = max(0.0,1.0 - (args.NonSyn_s/(args.popsize2)))
     if args.NonSyn_s_rescaled <= 0.0:

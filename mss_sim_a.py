@@ -866,6 +866,54 @@ class tree():
                     break
             samples[pop] = temp
         return samples
+    
+    # New function to output population-level alignments
+    def sampleindsfromonepop(self, nindiv, pop):
+        """
+        samples n sequences(individuals) from a population at the end of the run (for SFS calculation).
+        It saves genomes from a randomly picked population to a dictionary of ind:sequences.
+        """
+        if nindiv > 0:
+            # Raise errors 
+            if pop > self.args.numSpecies:
+                raise ArithmeticError(f"the chosen population p{pop} does not exists!")
+
+            # Question here: all populations have the same self.args.popsize?
+            if nindiv > self.args.popsize:
+                raise AttributeError(f"n = {nindiv} is not valid as n > N!")
+        
+            # Define the number of sampled chromosomes based on n
+            nchrom = 2*nindiv
+        
+            # Define how to select a population to sample from
+            if pop == 0:
+                # sample a random population
+                popkey = np.random.choice(list(sim.pops.keys()))
+            else:
+                popkey = "p" + str(pop)
+
+            # print(f"available populations to sample from are: {sim.pops.keys()}")
+            # print(f"selected pop is {popkey}")
+
+            # Sample from the population
+            sampled_seqs = self.pops[popkey].sampleindividual(nchrom)
+        
+            # create a list of keys
+            c = list(range(0, len(sampled_seqs)))
+            seqnames = [s + str(i) + '_' + popkey for i, s in zip(c, itertools.cycle("c"))]
+        
+            # create a dictionary of indiv Ids as keys and sequences as values    
+            sampled_chroms = {}
+            for i, key in enumerate(seqnames):
+                sampled_chroms[key] = sampled_seqs[i]
+
+            # This will save a different fasta file with population-level alignments
+            indvfastafilename = op.join(self.args.fdir, self.args.basename +  "_" + self.args.genename +"_nindivfrompop.fa")
+            if os.path.exists(indvfastafilename):
+                indvfastafilename = '{}(1).fa'.format(indvfastafilename[:-3])
+            
+            # This does the magic
+            makefastafile(sampled_chroms, indvfastafilename)
 
     def fitCheck(self):
         """
@@ -1231,6 +1279,8 @@ class tree():
                 
         self.args.meannumfits /= countpopgens
         sample = self.samplefrompops()
+        # This does the magic to output population-level sequences
+        self.sampleindsfromonepop(self.args.nsampledindvs, self.args.fixpoptosamplefrom)
         return sample
 
 def parseargs():
@@ -1271,6 +1321,10 @@ def parseargs():
                         dest="adaptchangerate",default=0.0,type=float)
     parser.add_argument("-x", help="save detailed substitution info (requires -d, slows things down a good bit)",
                         dest="savesubtimeinfo",default = False,action="store_true")
+    parser.add_argument("-n", help="number of sampled individuals to save to population-level alignement file",
+                        dest="nsampledindvs",default = 0, type=int)
+    parser.add_argument("-p", help="the population to sample individuals from (sp <= k)",
+                        dest="fixpoptosamplefrom",default = 0, type=int)
     return parser
 
 def main(argv):

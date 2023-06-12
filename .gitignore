@@ -1,3 +1,5 @@
+.vscode
+.vscode/launch.json
 mss_sim_matrices.py
 mss_sim_a.py
 mss_sim_a_alternative.py

@@ -1,0 +1,43 @@
+# with 2,3 and 4 neutral sets
+# E,F,P, Y all neutral
+# G   GGG selected with respect to others
+# I ATT selected with respect to others
+# L 3 sets, 2 codons in each
+# S 3 sets, 2 codons in each
+# A 4 sets, 1 codon in each
+# R 4 sets,  2 codons in 1st, 3 codons in 2nd,  AGA in 3rd, AGG in 4th
+# T 2 sets  ACT, ACC :neutral    ACA, ACG : neutral     between them selected 
+# V 2 sets  GTT, GTC: neutral    GTA, GTG: neutral  between them selected 
+I ATT
+I ATC ATA
+L CTT CTA 
+L CTG CTC TTG TTA 
+V GTT GTC 
+V GTA GTG
+F TTT TTC
+C TGT 
+C TGC
+A GCG GCT 
+A GCA
+A GCC
+G GGA GGC GGT 
+G GGG 
+P CCA CCC CCT CCG
+T ACC ACT 
+T ACG ACA
+S AGT AGC
+S TCG TCT TCA TCC 
+Y TAC TAT
+Q CAA 
+Q CAG
+N AAT 
+N AAC
+H CAT 
+H CAC
+E GAA GAG
+D GAT 
+D GAC
+K AAA 
+K AAG
+R CGC CGT 
+R CGA CGG AGA AGG
